@@ -7,8 +7,19 @@
  * Uso dry-run: node score_cartola.js --dry-run
  */
 
-import 'dotenv/config'
 import { createClient } from '@supabase/supabase-js'
+import { readFileSync } from 'fs'
+
+// Carrega .env localmente (em produção/CI as vars já estão no ambiente)
+try {
+  const raw = readFileSync('.env', 'utf-8')
+  raw.split('\n').filter(l => l.includes('=') && !l.startsWith('#')).forEach(l => {
+    const i = l.indexOf('=')
+    const k = l.slice(0, i).trim()
+    const v = l.slice(i + 1).trim()
+    if (!process.env[k]) process.env[k] = v
+  })
+} catch { /* .env não encontrado — usando vars do ambiente */ }
 
 const DRY_RUN = process.argv.includes('--dry-run')
 

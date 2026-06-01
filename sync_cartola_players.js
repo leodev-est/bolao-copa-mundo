@@ -9,8 +9,19 @@
  * Requer .env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, VITE_FOOTBALL_DATA_KEY
  */
 
-import 'dotenv/config'
 import { createClient } from '@supabase/supabase-js'
+import { readFileSync } from 'fs'
+
+// Carrega .env localmente (em produção/CI as vars já estão no ambiente)
+try {
+  const raw = readFileSync('.env', 'utf-8')
+  raw.split('\n').filter(l => l.includes('=') && !l.startsWith('#')).forEach(l => {
+    const i = l.indexOf('=')
+    const k = l.slice(0, i).trim()
+    const v = l.slice(i + 1).trim()
+    if (!process.env[k]) process.env[k] = v
+  })
+} catch { /* .env não encontrado — usando vars do ambiente */ }
 
 const SUPABASE_URL     = process.env.VITE_SUPABASE_URL
 const SUPABASE_SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -36,7 +47,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE)
 const BASE_PRICE = { GK: 10.0, DEF: 8.0, MID: 10.0, FWD: 12.0 }
 
 const POSITION_MAP = {
-  Goalkeeper: 'GK', 'Centre-Back': 'DEF', 'Left-Back': 'DEF', 'Right-Back': 'DEF',
+  // Categorias amplas da football-data.org
+  Goalkeeper: 'GK', Defence: 'DEF', Midfield: 'MID', Offence: 'FWD',
+  // Posições específicas (outras fontes)
+  'Centre-Back': 'DEF', 'Left-Back': 'DEF', 'Right-Back': 'DEF',
   'Left Winger': 'FWD', 'Right Winger': 'FWD', 'Centre-Forward': 'FWD', Attacker: 'FWD',
   'Central Midfield': 'MID', 'Defensive Midfield': 'MID', 'Attacking Midfield': 'MID',
   Midfielder: 'MID', Defender: 'DEF', Forward: 'FWD',
