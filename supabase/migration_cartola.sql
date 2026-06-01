@@ -1,5 +1,7 @@
 -- ============================================================
--- Migration Cartola da Copa — Execute no SQL Editor do Supabase
+-- Migration Cartola da Copa
+-- Idempotente: pode rodar várias vezes sem erro
+-- Execute no SQL Editor do Supabase
 -- ============================================================
 
 -- ── 1. Rodadas do Cartola ──────────────────────────────────
@@ -23,6 +25,8 @@ CREATE TABLE IF NOT EXISTS public.cartola_players (
   position      TEXT NOT NULL CHECK (position IN ('GK','DEF','MID','FWD')),
   team_id       INTEGER,
   team_name     TEXT NOT NULL,
+  team_flag     TEXT,
+  photo_url     TEXT,
   price         NUMERIC(5,1) NOT NULL DEFAULT 8,
   avg_points    NUMERIC(5,1) NOT NULL DEFAULT 0,
   available     BOOLEAN NOT NULL DEFAULT true,
@@ -102,7 +106,9 @@ CREATE TRIGGER cartola_player_scores_updated_at
   FOR EACH ROW EXECUTE FUNCTION update_cartola_updated_at();
 
 -- ── 7. View: leaderboard geral do Cartola ─────────────────
-CREATE OR REPLACE VIEW public.cartola_leaderboard AS
+-- DROP + CREATE evita o erro "cannot drop columns from view"
+DROP VIEW IF EXISTS public.cartola_leaderboard;
+CREATE VIEW public.cartola_leaderboard AS
 WITH totals AS (
   SELECT
     user_id,
@@ -119,69 +125,78 @@ SELECT
 FROM totals t
 JOIN public.profiles p ON p.id = t.user_id;
 
--- ── 8. RLS — cartola_rounds (leitura pública) ──────────────
+-- ── 8. RLS — cartola_rounds ────────────────────────────────
 ALTER TABLE public.cartola_rounds ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "cartola_rounds_select_all" ON public.cartola_rounds
-  FOR SELECT USING (true);
+DO $$ BEGIN
+  CREATE POLICY "cartola_rounds_select_all" ON public.cartola_rounds FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- ── 9. RLS — cartola_players (leitura pública) ────────────
+-- ── 9. RLS — cartola_players ──────────────────────────────
 ALTER TABLE public.cartola_players ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "cartola_players_select_all" ON public.cartola_players
-  FOR SELECT USING (true);
+DO $$ BEGIN
+  CREATE POLICY "cartola_players_select_all" ON public.cartola_players FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ── 10. RLS — cartola_teams ────────────────────────────────
 ALTER TABLE public.cartola_teams ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "cartola_teams_select_all" ON public.cartola_teams
-  FOR SELECT USING (true);
-
-CREATE POLICY "cartola_teams_insert_own" ON public.cartola_teams
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "cartola_teams_update_own" ON public.cartola_teams
-  FOR UPDATE USING (auth.uid() = user_id);
+DO $$ BEGIN
+  CREATE POLICY "cartola_teams_select_all" ON public.cartola_teams FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "cartola_teams_insert_own" ON public.cartola_teams
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "cartola_teams_update_own" ON public.cartola_teams
+    FOR UPDATE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ── 11. RLS — cartola_team_players ────────────────────────
 ALTER TABLE public.cartola_team_players ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "cartola_team_players_select_all" ON public.cartola_team_players FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "cartola_team_players_insert_own" ON public.cartola_team_players
+    FOR INSERT WITH CHECK (
+      EXISTS (SELECT 1 FROM public.cartola_teams WHERE id = cartola_team_id AND user_id = auth.uid())
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "cartola_team_players_delete_own" ON public.cartola_team_players
+    FOR DELETE USING (
+      EXISTS (SELECT 1 FROM public.cartola_teams WHERE id = cartola_team_id AND user_id = auth.uid())
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "cartola_team_players_select_all" ON public.cartola_team_players
-  FOR SELECT USING (true);
-
-CREATE POLICY "cartola_team_players_insert_own" ON public.cartola_team_players
-  FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.cartola_teams
-      WHERE id = cartola_team_id AND user_id = auth.uid()
-    )
-  );
-
-CREATE POLICY "cartola_team_players_delete_own" ON public.cartola_team_players
-  FOR DELETE USING (
-    EXISTS (
-      SELECT 1 FROM public.cartola_teams
-      WHERE id = cartola_team_id AND user_id = auth.uid()
-    )
-  );
-
--- ── 12. RLS — cartola_player_scores (leitura pública) ─────
+-- ── 12. RLS — cartola_player_scores ───────────────────────
 ALTER TABLE public.cartola_player_scores ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "cartola_player_scores_select_all" ON public.cartola_player_scores
-  FOR SELECT USING (true);
+DO $$ BEGIN
+  CREATE POLICY "cartola_player_scores_select_all" ON public.cartola_player_scores FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ── 13. Realtime ───────────────────────────────────────────
-ALTER PUBLICATION supabase_realtime ADD TABLE public.cartola_rounds;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.cartola_teams;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.cartola_player_scores;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.cartola_rounds; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.cartola_teams; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.cartola_player_scores; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- ── 14. Dados iniciais: Rodada 1 (Fase de Grupos) ─────────
--- Ajuste as datas conforme o calendário da Copa 2026
+-- ── 14. Dados iniciais: Rodadas ────────────────────────────
 INSERT INTO public.cartola_rounds (name, start_date, end_date, status, phase)
 VALUES
-  ('Rodada 1 — Fase de Grupos', '2026-06-11', '2026-06-18', 'open',  'group'),
-  ('Rodada 2 — Fase de Grupos', '2026-06-19', '2026-06-25', 'open',  'group'),
-  ('Rodada 3 — Fase de Grupos', '2026-06-26', '2026-07-02', 'open',  'group'),
-  ('Oitavas de Final',           '2026-07-03', '2026-07-06', 'open',  'round_of_16'),
-  ('Quartas de Final',           '2026-07-07', '2026-07-08', 'open',  'quarter'),
-  ('Semifinal',                  '2026-07-14', '2026-07-15', 'open',  'semi'),
-  ('Final',                      '2026-07-19', '2026-07-19', 'open',  'final')
+  ('Rodada 1 — Fase de Grupos', '2026-06-11', '2026-06-18', 'open', 'group'),
+  ('Rodada 2 — Fase de Grupos', '2026-06-19', '2026-06-25', 'open', 'group'),
+  ('Rodada 3 — Fase de Grupos', '2026-06-26', '2026-07-02', 'open', 'group'),
+  ('Oitavas de Final',           '2026-07-03', '2026-07-06', 'open', 'round_of_16'),
+  ('Quartas de Final',           '2026-07-07', '2026-07-08', 'open', 'quarter'),
+  ('Semifinal',                  '2026-07-14', '2026-07-15', 'open', 'semi'),
+  ('Final',                      '2026-07-19', '2026-07-19', 'open', 'final')
 ON CONFLICT DO NOTHING;

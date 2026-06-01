@@ -1,5 +1,6 @@
 -- ============================================================
 -- Migration v2 — Palpite unificado com placar + artilheiros
+-- Idempotente: pode rodar várias vezes sem erro
 -- Execute no SQL Editor do Supabase
 -- ============================================================
 
@@ -11,11 +12,10 @@ ALTER TABLE public.bets
 ALTER TABLE public.bets
   ADD COLUMN IF NOT EXISTS score_home       INTEGER,
   ADD COLUMN IF NOT EXISTS score_away       INTEGER,
-  ADD COLUMN IF NOT EXISTS predicted_result TEXT,  -- 'home' | 'draw' | 'away'
+  ADD COLUMN IF NOT EXISTS predicted_result TEXT,
   ADD COLUMN IF NOT EXISTS odd              NUMERIC(6,2);
 
 -- 3. Índice único parcial: apenas um palpite principal por usuário por jogo
---    (bet_option_id IS NULL = palpite principal de placar)
 CREATE UNIQUE INDEX IF NOT EXISTS bets_main_bet_idx
   ON public.bets(user_id, match_id)
   WHERE bet_option_id IS NULL;
@@ -30,41 +30,41 @@ CREATE TABLE IF NOT EXISTS public.bet_scorers (
   player_name  TEXT NOT NULL,
   is_correct   BOOLEAN,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(bet_id, slot_index)   -- mesmo jogador pode aparecer em slots diferentes
+  UNIQUE(bet_id, slot_index)
 );
 
 -- 5. RLS para bet_scorers
 ALTER TABLE public.bet_scorers ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "bet_scorers_select_own" ON public.bet_scorers
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM public.bets
-      WHERE bets.id = bet_scorers.bet_id
-        AND bets.user_id = auth.uid()
-    )
-  );
+DO $$ BEGIN
+  CREATE POLICY "bet_scorers_select_own" ON public.bet_scorers
+    FOR SELECT USING (
+      EXISTS (SELECT 1 FROM public.bets WHERE bets.id = bet_scorers.bet_id AND bets.user_id = auth.uid())
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "bet_scorers_insert_own" ON public.bet_scorers
-  FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.bets
-      WHERE bets.id = bet_scorers.bet_id
-        AND bets.user_id = auth.uid()
-    )
-  );
+DO $$ BEGIN
+  CREATE POLICY "bet_scorers_insert_own" ON public.bet_scorers
+    FOR INSERT WITH CHECK (
+      EXISTS (SELECT 1 FROM public.bets WHERE bets.id = bet_scorers.bet_id AND bets.user_id = auth.uid())
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "bet_scorers_update_own" ON public.bet_scorers
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM public.bets
-      WHERE bets.id = bet_scorers.bet_id
-        AND bets.user_id = auth.uid()
-    )
-  );
+DO $$ BEGIN
+  CREATE POLICY "bet_scorers_update_own" ON public.bet_scorers
+    FOR UPDATE USING (
+      EXISTS (SELECT 1 FROM public.bets WHERE bets.id = bet_scorers.bet_id AND bets.user_id = auth.uid())
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- 6. Realtime para bet_scorers
-ALTER PUBLICATION supabase_realtime ADD TABLE public.bet_scorers;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.bet_scorers;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- 7. Remover tipos de cartão das opções existentes (limpeza de dados)
 DELETE FROM public.bet_options
