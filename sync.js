@@ -76,6 +76,9 @@ async function sync() {
   let total = 0, erros = 0
 
   for (const m of matches) {
+    // Pula jogos do mata-mata cujos times ainda não foram definidos
+    if (!m.homeTeam?.name || !m.awayTeam?.name) continue
+
     const record = {
       api_match_id:   m.id,
       home_team:      m.homeTeam.name,

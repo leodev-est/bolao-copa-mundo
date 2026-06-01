@@ -60,13 +60,16 @@ serve(async (_req) => {
   for (const m of matches) {
     const home  = m.homeTeam as Record<string, unknown>
     const away  = m.awayTeam as Record<string, unknown>
+    // Pula mata-mata com times TBD
+    if (!home?.name || !away?.name) continue
+
     const score = m.score as Record<string, unknown>
     const ft    = score?.fullTime as Record<string, unknown> | null
 
     const record = {
       api_match_id:   m.id,
-      home_team:      home?.name,
-      away_team:      away?.name,
+      home_team:      home.name,
+      away_team:      away.name,
       home_team_logo: home?.crest ?? null,
       away_team_logo: away?.crest ?? null,
       home_team_id:   home?.id,
