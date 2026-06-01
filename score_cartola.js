@@ -1,5 +1,6 @@
 /**
  * Calcula e salva a pontuação do Cartola para partidas encerradas.
+ * API: football-data.org v4 (gols e cartões via GET /v4/matches/{id})
  * Rodado pelo GitHub Actions a cada hora durante a Copa.
  *
  * Uso local: node score_cartola.js
@@ -16,7 +17,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const API_HOST = 'free-api-live-football-data.p.rapidapi.com'
+const BASE_URL = 'https://api.football-data.org/v4'
+const API_KEY  = process.env.VITE_FOOTBALL_DATA_KEY
 
 // ── Pontuação ───────────────────────────────────────────────────────────────────
 const SCORING = {
@@ -45,41 +47,42 @@ function calcScore({ position, goals = 0, assists = 0, cleanSheet = false,
 function applyCapitan(base, isCaptain) { return isCaptain ? base * 2 : base }
 
 // ── API ─────────────────────────────────────────────────────────────────────────
-async function apiGet(endpoint, params = {}) {
-  const url = new URL(`https://${API_HOST}/${endpoint}`)
-  Object.entries(params).forEach(([k, v]) => url.searchParams.append(k, String(v)))
-  const res = await fetch(url.toString(), {
-    headers: { 'x-rapidapi-key': process.env.VITE_API_FOOTBALL_KEY, 'x-rapidapi-host': API_HOST },
+async function fetchMatchDetail(matchId) {
+  const res = await fetch(`${BASE_URL}/matches/${matchId}`, {
+    headers: { 'X-Auth-Token': API_KEY },
   })
   if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`)
-  const data = await res.json()
-  return data.response ?? data
+  return res.json()
 }
 
-// ── Extrai eventos relevantes ───────────────────────────────────────────────────
-function parseEvents(events = []) {
-  const goals = [], assists = [], yellows = [], reds = [], penSaved = [], ownGoals = []
+// ── Extrai eventos relevantes do match detail ───────────────────────────────────
+function parseMatchDetail(detail) {
+  const goals     = []
+  const assists   = []
+  const yellows   = []
+  const reds      = []
+  const penSaved  = []
+  const ownGoals  = []
 
-  for (const e of Array.isArray(events) ? events : []) {
-    const type    = e.type   ?? e.event_type ?? ''
-    const detail  = e.detail ?? ''
-    const pid     = e.player?.id   ?? e.player_id   ?? null
-    const assist  = e.assist?.id   ?? null
-    const assistN = e.assist?.name ?? null
-    const teamId  = e.team?.id     ?? e.team_id     ?? null
-
-    if (type === 'Goal' || type === 'goal') {
-      if (detail === 'Own Goal' || detail === 'own_goal') {
-        ownGoals.push({ pid, teamId })
-      } else {
-        goals.push({ pid, teamId })
-        if (assist) assists.push({ pid: assist, name: assistN, teamId })
-      }
+  for (const g of detail.goals ?? []) {
+    const pid    = g.scorer?.id ?? null
+    const teamId = g.team?.id ?? null
+    if (g.type === 'OWN') {
+      ownGoals.push({ pid, teamId })
+    } else {
+      goals.push({ pid, teamId })
+      if (g.assist?.id) assists.push({ pid: g.assist.id, teamId })
     }
-    if ((type === 'Card' && detail === 'Yellow Card') || type === 'yellowcard') yellows.push({ pid })
-    if ((type === 'Card' && (detail === 'Red Card' || detail === 'Second Yellow card')) || type === 'redcard') reds.push({ pid })
-    if (detail === 'Penalty Saved' || detail === 'penalty_saved') penSaved.push({ pid })
   }
+
+  for (const b of detail.bookings ?? []) {
+    const pid = b.player?.id ?? null
+    if (b.card === 'YELLOW') yellows.push({ pid })
+    if (b.card === 'RED')    reds.push({ pid })
+  }
+
+  // Pênalti defendido: inferable se goleiro tem penaltySaved no summary
+  // football-data.org não expõe isso explicitamente — deixamos zerado por ora
 
   return { goals, assists, yellows, reds, penSaved, ownGoals }
 }
@@ -88,7 +91,6 @@ function parseEvents(events = []) {
 async function processMatch(match, roundId) {
   console.log(`  ⚽ ${match.home_team} ${match.score_home ?? '?'} × ${match.score_away ?? '?'} ${match.away_team}`)
 
-  // Verifica se já foi pontuado
   const { data: existing } = await supabase
     .from('cartola_player_scores')
     .select('id')
@@ -101,18 +103,16 @@ async function processMatch(match, roundId) {
     return false
   }
 
-  // Busca eventos na API
-  let events = []
+  let parsed = { goals: [], assists: [], yellows: [], reds: [], penSaved: [], ownGoals: [] }
   try {
-    const data = await apiGet('football-get-fixture-events', { fixture_id: match.api_match_id })
-    events = Array.isArray(data) ? data : (data.events ?? data.data ?? [])
+    const detail = await fetchMatchDetail(match.api_match_id)
+    parsed = parseMatchDetail(detail)
   } catch (err) {
     console.warn(`    ↳ sem eventos: ${err.message}`)
   }
 
-  const { goals, assists, yellows, reds, penSaved, ownGoals } = parseEvents(events)
+  const { goals, assists, yellows, reds, penSaved, ownGoals } = parsed
 
-  // Busca jogadores dos dois times
   const { data: players } = await supabase
     .from('cartola_players')
     .select('id, api_player_id, position, team_id')
@@ -124,10 +124,10 @@ async function processMatch(match, roundId) {
   }
 
   const rows = players.map(player => {
-    const pid = player.api_player_id
-    const isHome = player.team_id === match.home_team_id
+    const pid          = player.api_player_id
+    const isHome       = player.team_id === match.home_team_id
     const goalsConceded = isHome ? (match.score_away ?? 1) : (match.score_home ?? 1)
-    const cleanSheet = goalsConceded === 0
+    const cleanSheet   = goalsConceded === 0
 
     const playerGoals    = goals.filter(e => e.pid === pid).length
     const playerAssists  = assists.filter(e => e.pid === pid).length
@@ -138,28 +138,17 @@ async function processMatch(match, roundId) {
     const playerCS       = cleanSheet && (player.position === 'GK' || player.position === 'DEF')
 
     const total = calcScore({
-      position:     player.position,
-      goals:        playerGoals,
-      assists:      playerAssists,
-      cleanSheet:   playerCS,
-      yellowCard:   playerYellow,
-      redCard:      playerRed,
-      penaltySaved: playerPenSaved,
-      ownGoal:      playerOwnGoal,
+      position: player.position, goals: playerGoals, assists: playerAssists,
+      cleanSheet: playerCS, yellowCard: playerYellow, redCard: playerRed,
+      penaltySaved: playerPenSaved, ownGoal: playerOwnGoal,
     })
 
     return {
-      player_id:     player.id,
-      round_id:      roundId,
-      match_id:      match.id,
-      goals:         playerGoals,
-      assists:       playerAssists,
-      clean_sheet:   playerCS,
-      yellow_card:   playerYellow,
-      red_card:      playerRed,
-      penalty_saved: playerPenSaved,
-      own_goal:      playerOwnGoal,
-      total_points:  total,
+      player_id: player.id, round_id: roundId, match_id: match.id,
+      goals: playerGoals, assists: playerAssists, clean_sheet: playerCS,
+      yellow_card: playerYellow, red_card: playerRed,
+      penalty_saved: playerPenSaved, own_goal: playerOwnGoal,
+      total_points: total,
     }
   })
 
@@ -176,7 +165,7 @@ async function processMatch(match, roundId) {
   return true
 }
 
-// ── Recalcula total dos times de uma rodada ─────────────────────────────────────
+// ── Recalcula totais dos times ──────────────────────────────────────────────────
 async function recalcTeamTotals(roundId) {
   const { data: teams } = await supabase
     .from('cartola_teams')
@@ -205,7 +194,7 @@ async function recalcTeamTotals(roundId) {
   console.log(`  ↳ totais de ${teams?.length ?? 0} times atualizados`)
 }
 
-// ── Verifica se todas as partidas da rodada terminaram ──────────────────────────
+// ── Verifica se a rodada encerrou ───────────────────────────────────────────────
 async function checkRoundCompletion(round) {
   const { data: unfinished } = await supabase
     .from('matches')
@@ -215,11 +204,10 @@ async function checkRoundCompletion(round) {
     .not('status', 'in', '("FT","AET","PEN","CANC")')
 
   if (unfinished?.length === 0) {
-    console.log(`\n🏁 Rodada "${round.name}" finalizada! Encerrando...`)
+    console.log(`\n🏁 Rodada "${round.name}" finalizada!`)
     if (!DRY_RUN) {
       await supabase.from('cartola_rounds').update({ status: 'finished' }).eq('id', round.id)
     }
-    console.log('  ↳ status → finished')
   }
 }
 
@@ -228,7 +216,6 @@ async function main() {
   const now = new Date().toISOString().split('T')[0]
   console.log(`🏆 Score Cartola — ${now}${DRY_RUN ? ' (DRY RUN)' : ''}\n`)
 
-  // Busca rodadas ativas (open ou closed) cujo período já começou
   const { data: rounds, error: roundErr } = await supabase
     .from('cartola_rounds')
     .select('*')
@@ -241,13 +228,11 @@ async function main() {
   for (const round of rounds) {
     console.log(`📅 Rodada: ${round.name} (${round.status})`)
 
-    // Fecha rodada para novas escalações
     if (round.status === 'open' && !DRY_RUN) {
       await supabase.from('cartola_rounds').update({ status: 'closed' }).eq('id', round.id)
-      console.log('  ↳ status → closed (rodada em andamento)')
+      console.log('  ↳ status → closed')
     }
 
-    // Busca partidas encerradas dentro do período da rodada
     const { data: matches } = await supabase
       .from('matches')
       .select('id, api_match_id, home_team, away_team, home_team_id, away_team_id, score_home, score_away')
@@ -255,10 +240,7 @@ async function main() {
       .lte('match_date', round.end_date + 'T23:59:59Z')
       .in('status', ['FT', 'AET', 'PEN'])
 
-    if (!matches?.length) {
-      console.log('  ↳ nenhuma partida encerrada ainda\n')
-      continue
-    }
+    if (!matches?.length) { console.log('  ↳ nenhuma partida encerrada ainda\n'); continue }
 
     console.log(`  ${matches.length} partidas encerradas:\n`)
 
@@ -266,7 +248,7 @@ async function main() {
     for (const match of matches) {
       const scored = await processMatch(match, round.id)
       if (scored) processed++
-      await new Promise(r => setTimeout(r, 300))
+      await new Promise(r => setTimeout(r, 6500)) // respeita 10 req/min do plano gratuito
     }
 
     if (processed > 0) {

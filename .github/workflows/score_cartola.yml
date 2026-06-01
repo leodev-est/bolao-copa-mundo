@@ -29,7 +29,7 @@ jobs:
 
       - name: Rodar script de pontuação
         env:
-          VITE_SUPABASE_URL:       ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          VITE_API_FOOTBALL_KEY:   ${{ secrets.VITE_API_FOOTBALL_KEY }}
+          VITE_FOOTBALL_DATA_KEY:    ${{ secrets.VITE_FOOTBALL_DATA_KEY }}
         run: node score_cartola.js
