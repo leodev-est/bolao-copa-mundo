@@ -1,18 +1,18 @@
-name: Cartola — Calcular pontuações
+name: Copa — Sync · Resolver Palpites · Cartola
 
 on:
   schedule:
-    # Roda a cada hora entre 12h e 00h UTC (cobre todos os jogos da Copa)
-    # Copa: 11 Jun – 19 Jul 2026
+    # A cada hora entre 12h e 00h UTC durante a Copa (cobre todos os jogos)
+    # Copa do Mundo 2026: 11 Jun – 19 Jul
     - cron: '0 12-23 11-30 6 *'   # Junho: dia 11–30
     - cron: '0 12-23 1-19  7 *'   # Julho: dia 1–19
   workflow_dispatch:               # Permite rodar manualmente pelo GitHub UI
 
 jobs:
-  score:
-    name: Pontuar partidas encerradas
+  atualizar:
+    name: Sincronizar, resolver palpites e pontuar Cartola
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -27,7 +27,21 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: Rodar script de pontuação
+      - name: 1 · Sincronizar jogos e placares
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_FOOTBALL_DATA_KEY:    ${{ secrets.VITE_FOOTBALL_DATA_KEY }}
+        run: node sync.js
+
+      - name: 2 · Resolver palpites das partidas encerradas
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_FOOTBALL_DATA_KEY:    ${{ secrets.VITE_FOOTBALL_DATA_KEY }}
+        run: node resolve_bets.js
+
+      - name: 3 · Pontuar Cartola
         env:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
