@@ -1,12 +1,13 @@
 // Edge Function: resolve-bets
-// Roda a cada 5 minutos durante jogos ao vivo para resolver palpites
+// Resolve palpites após o encerramento de partidas
 // Deploy: supabase functions deploy resolve-bets
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const LIVE_STATUSES = ['1H', 'HT', '2H', 'ET', 'P', 'FT']
-const FINISHED_STATUS = 'FT'
+const LIVE_STATUSES     = ['1H', 'HT', '2H', 'ET', 'P']
+const FINISHED_STATUSES = ['FT', 'AET', 'PEN']
+const API_HOST = 'free-api-live-football-data.p.rapidapi.com'
 
 serve(async (_req) => {
   const supabase = createClient(
@@ -15,151 +16,149 @@ serve(async (_req) => {
   )
   const apiKey = Deno.env.get('API_FOOTBALL_KEY')!
 
-  // Buscar partidas ao vivo ou recém encerradas
+  // Busca partidas encerradas ou ao vivo com palpites pendentes
   const { data: matches } = await supabase
     .from('matches')
-    .select('id, api_match_id, status')
-    .in('status', LIVE_STATUSES)
+    .select('id, api_match_id, status, score_home, score_away, home_team, away_team')
+    .in('status', [...LIVE_STATUSES, ...FINISHED_STATUSES])
 
   if (!matches?.length) {
-    return new Response(JSON.stringify({ message: 'No live matches' }), {
+    return new Response(JSON.stringify({ message: 'No matches to resolve' }), {
       headers: { 'Content-Type': 'application/json' },
     })
   }
 
-  const results: Record<string, number> = {}
+  const results: Record<string, unknown> = {}
 
   for (const match of matches) {
-    const res = await fetch(
-      `https://v3.football.api-sports.io/fixtures/events?fixture=${match.api_match_id}`,
-      {
-        headers: {
-          'X-RapidAPI-Key': apiKey,
-          'X-RapidAPI-Host': 'v3.football.api-sports.io',
-        },
-      }
-    )
-    const data = await res.json()
-    const events: ApiEvent[] = data.response ?? []
+    if (!FINISHED_STATUSES.includes(match.status)) continue
 
-    // Buscar opções de palpite pendentes para essa partida
-    const { data: betOptions } = await supabase
-      .from('bet_options')
-      .select('id, type, metadata')
+    // 1. Busca eventos da partida para resolver artilheiros
+    let goals: Array<{ player_id: number; player_name: string; team: string }> = []
+    try {
+      const res  = await fetch(
+        `https://${API_HOST}/football-get-fixture-events?fixture_id=${match.api_match_id}`,
+        { headers: { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': API_HOST } }
+      )
+      const data = await res.json()
+      const events = data?.response?.events ?? data?.response ?? []
+      goals = events
+        .filter((e: Record<string, unknown>) =>
+          e.type === 'Goal' || e.event_type === 'goal'
+        )
+        .map((e: Record<string, unknown>) => ({
+          player_id:   (e.player as Record<string, unknown>)?.id ?? e.player_id,
+          player_name: (e.player as Record<string, unknown>)?.name ?? e.player_name,
+          team:        (e.team as Record<string, unknown>)?.name ?? e.team_name,
+        }))
+    } catch { /* ignora se API falhar — resolve sem artilheiros */ }
+
+    const actualHome = match.score_home ?? 0
+    const actualAway = match.score_away ?? 0
+    const actualResult = actualHome > actualAway ? 'home' : actualAway > actualHome ? 'away' : 'draw'
+
+    // 2. Resolve palpites principais (placar + artilheiros)
+    const { data: mainBets } = await supabase
+      .from('bets')
+      .select('id, score_home, score_away, predicted_result, odd, points_wagered, bet_scorers(*)')
       .eq('match_id', match.id)
+      .is('bet_option_id', null)
+      .eq('status', 'pending')
+
+    for (const bet of (mainBets ?? [])) {
+      const exactScore = bet.score_home === actualHome && bet.score_away === actualAway
+      const resultOk   = bet.predicted_result === actualResult
+
+      let pointsWon = 0
+      if (exactScore) {
+        // Placar exato: recebe pontos pela odd
+        pointsWon += bet.points_wagered * bet.odd
+      } else if (resultOk) {
+        // Resultado correto mas placar errado: consolação (1.3x)
+        pointsWon += bet.points_wagered * 1.3
+      }
+
+      // Artilheiros: +0.5 por slot correto
+      const scorerResults: Array<{ id: string; is_correct: boolean }> = []
+      for (const scorer of (bet.bet_scorers ?? [])) {
+        let correct = false
+
+        if (scorer.player_id) {
+          // Verifica por ID do jogador
+          const teamIsHome = (bet.score_home ?? 0) > 0
+            ? scorer.team === 'home'
+            : scorer.team === 'home'
+
+          correct = goals.some(g =>
+            g.player_id === scorer.player_id &&
+            (teamIsHome
+              ? g.team === match.home_team
+              : g.team === match.away_team
+            )
+          )
+        } else {
+          // Fallback: compara por nome
+          correct = goals.some(g =>
+            g.player_name?.toLowerCase() === scorer.player_name?.toLowerCase()
+          )
+        }
+
+        if (correct) pointsWon += 0.5
+        scorerResults.push({ id: scorer.id, is_correct: correct })
+      }
+
+      // Atualiza bet principal
+      const betStatus = exactScore || resultOk || pointsWon > 0 ? 'won' : 'lost'
+      await supabase
+        .from('bets')
+        .update({ status: betStatus, points_won: parseFloat(pointsWon.toFixed(2)), updated_at: new Date().toISOString() })
+        .eq('id', bet.id)
+
+      // Atualiza is_correct de cada scorer
+      for (const sr of scorerResults) {
+        await supabase
+          .from('bet_scorers')
+          .update({ is_correct: sr.is_correct })
+          .eq('id', sr.id)
+      }
+    }
+
+    // 3. Resolve apostas extras (total_goals, total_yellows)
+    const { data: extraOptions } = await supabase
+      .from('bet_options')
+      .select('id, type, metadata, result')
+      .eq('match_id', match.id)
+      .in('type', ['total_goals', 'total_yellows'])
       .is('result', null)
 
-    if (!betOptions?.length) continue
+    for (const opt of (extraOptions ?? [])) {
+      let result: 'won' | 'lost' | null = null
+      const meta = opt.metadata as Record<string, unknown>
+      const threshold  = meta?.threshold  as number
+      const direction  = meta?.direction  as string
 
-    // Resolver cada opção com base nos eventos
-    for (const option of betOptions) {
-      const result = evaluateBetOption(option, events, match)
-      if (result !== null) {
+      if (opt.type === 'total_goals') {
+        const total = actualHome + actualAway
+        result = direction === 'over'
+          ? total >= threshold ? 'won' : 'lost'
+          : total  < threshold ? 'won' : 'lost'
+      }
+
+      if (result) {
         await supabase
           .from('bet_options')
           .update({ result })
-          .eq('id', option.id)
+          .eq('id', opt.id)
       }
     }
 
-    // Se partida encerrou, resolver todos os palpites pendentes
-    if (match.status === FINISHED_STATUS) {
-      const { data: resolved } = await supabase.rpc('resolve_bets', {
-        p_match_id: match.id,
-      })
-      results[match.id] = resolved ?? 0
-    }
+    // 4. Resolve apostas extras dos usuários
+    await supabase.rpc('resolve_bets', { p_match_id: match.id })
+
+    results[match.id] = { home: actualHome, away: actualAway, mainBets: mainBets?.length ?? 0 }
   }
 
   return new Response(JSON.stringify({ results }), {
     headers: { 'Content-Type': 'application/json' },
   })
 })
-
-interface ApiEvent {
-  type: string        // 'Goal' | 'Card' | 'subst'
-  detail: string      // 'Normal Goal' | 'Yellow Card' | 'Red Card' etc.
-  player: { id: number; name: string }
-  team: { id: number; name: string }
-  time: { elapsed: number }
-  comments?: string
-}
-
-interface BetOption {
-  id: string
-  type: string
-  metadata: Record<string, unknown>
-}
-
-interface Match {
-  id: string
-  api_match_id: number
-  status: string
-  score_home?: number
-  score_away?: number
-}
-
-function evaluateBetOption(
-  option: BetOption,
-  events: ApiEvent[],
-  match: Match
-): 'won' | 'lost' | null {
-  const goals = events.filter(e => e.type === 'Goal')
-  const yellows = events.filter(e => e.type === 'Card' && e.detail === 'Yellow Card')
-  const reds = events.filter(e => e.type === 'Card' && e.detail === 'Red Card')
-
-  if (match.status !== 'FT') return null   // só resolve ao final
-
-  switch (option.type) {
-    case 'winner': {
-      const predicted = option.metadata.predicted_winner as string
-      const homeScore = match.score_home ?? 0
-      const awayScore = match.score_away ?? 0
-      const winner = homeScore > awayScore ? 'home' : awayScore > homeScore ? 'away' : 'draw'
-      return winner === predicted ? 'won' : 'lost'
-    }
-
-    case 'exact_score': {
-      const expected = option.metadata.score as string  // "2-1"
-      const actual = `${match.score_home ?? 0}-${match.score_away ?? 0}`
-      return actual === expected ? 'won' : 'lost'
-    }
-
-    case 'goalscorer': {
-      const playerId = option.metadata.player_id as number
-      const scored = goals.some(e => e.player.id === playerId)
-      return scored ? 'won' : 'lost'
-    }
-
-    case 'yellow_card': {
-      const playerId = option.metadata.player_id as number
-      const gotCard = yellows.some(e => e.player.id === playerId)
-      return gotCard ? 'won' : 'lost'
-    }
-
-    case 'red_card': {
-      const playerId = option.metadata.player_id as number
-      const gotCard = reds.some(e => e.player.id === playerId)
-      return gotCard ? 'won' : 'lost'
-    }
-
-    case 'total_yellows': {
-      const threshold = option.metadata.threshold as number
-      const direction = option.metadata.direction as string  // 'over' | 'under'
-      const total = yellows.length
-      if (direction === 'over') return total >= threshold ? 'won' : 'lost'
-      return total < threshold ? 'won' : 'lost'
-    }
-
-    case 'total_goals': {
-      const threshold = option.metadata.threshold as number
-      const direction = option.metadata.direction as string
-      const total = (match.score_home ?? 0) + (match.score_away ?? 0)
-      if (direction === 'over') return total >= threshold ? 'won' : 'lost'
-      return total < threshold ? 'won' : 'lost'
-    }
-
-    default:
-      return null
-  }
-}

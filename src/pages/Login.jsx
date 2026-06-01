@@ -48,8 +48,11 @@ export default function Login() {
   function translateError(msg) {
     if (msg.includes('Invalid login credentials')) return 'Email ou senha incorretos.'
     if (msg.includes('Email not confirmed'))       return 'Confirme seu email antes de entrar.'
-    if (msg.includes('User already registered'))   return 'Este email já está cadastrado.'
+    if (msg.includes('User already registered'))   return 'Este email já está cadastrado. Tente entrar.'
     if (msg.includes('Password should be'))        return 'A senha deve ter pelo menos 6 caracteres.'
+    if (msg.includes('only request this after'))   return 'Aguarde alguns segundos e tente novamente.'
+    if (msg.includes('Too Many Requests'))         return 'Muitas tentativas. Aguarde 1 minuto.'
+    if (msg.includes('rate limit'))                return 'Muitas tentativas. Aguarde 1 minuto.'
     return msg
   }
 

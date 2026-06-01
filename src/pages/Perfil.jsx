@@ -175,13 +175,19 @@ export default function Perfil() {
               const statusCfg = BET_STATUS_LABELS[bet.status] ?? BET_STATUS_LABELS.pending
               const match = bet.matches
               const opt = bet.bet_options
+              const isMainBet = !bet.bet_option_id   // palpite principal de placar
+              const betOdd = bet.odd ?? opt?.odd
+              const description = isMainBet
+                ? `Placar: ${bet.score_home} × ${bet.score_away}`
+                : opt?.description
+              const icon = isMainBet ? '🎯' : (BET_TYPE_ICONS[opt?.type] ?? '🎲')
               return (
                 <div key={bet.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-2 flex-1 min-w-0">
-                      <span className="text-lg mt-0.5 shrink-0">{BET_TYPE_ICONS[opt?.type] ?? '🎲'}</span>
+                      <span className="text-lg mt-0.5 shrink-0">{icon}</span>
                       <div className="min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{opt?.description}</p>
+                        <p className="text-white text-sm font-medium truncate">{description}</p>
                         <p className="text-gray-500 text-xs mt-0.5">
                           {match?.home_team} vs {match?.away_team}
                           {match?.match_date && (
@@ -201,7 +207,7 @@ export default function Perfil() {
                           ? '-1'
                           : '?'} pts
                       </p>
-                      <p className="text-gray-600 text-xs">odd {formatOdd(opt?.odd)}</p>
+                      <p className="text-gray-600 text-xs">odd {betOdd ? formatOdd(betOdd) : '—'}</p>
                     </div>
                   </div>
                 </div>

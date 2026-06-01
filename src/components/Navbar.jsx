@@ -1,10 +1,11 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Trophy, Calendar, BarChart2, User, LogOut } from 'lucide-react'
+import { Trophy, Calendar, BarChart2, User, LogOut, Shirt } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
 const LINKS = [
   { to: '/jogos',   label: 'Jogos',   icon: Calendar  },
   { to: '/ranking', label: 'Ranking', icon: BarChart2  },
+  { to: '/cartola', label: 'Cartola', icon: Shirt      },
   { to: '/perfil',  label: 'Perfil',  icon: User       },
 ]
 

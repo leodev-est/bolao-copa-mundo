@@ -6,6 +6,8 @@ import Jogos from './pages/Jogos'
 import Palpite from './pages/Palpite'
 import Ranking from './pages/Ranking'
 import Perfil from './pages/Perfil'
+import Cartola from './pages/Cartola'
+import CartolaRanking from './pages/CartolaRanking'
 
 export default function App() {
   return (
@@ -20,6 +22,8 @@ export default function App() {
             <Route path="/jogos/:matchId/palpite" element={<Palpite />} />
             <Route path="/ranking" element={<Ranking />} />
             <Route path="/perfil" element={<Perfil />} />
+            <Route path="/cartola" element={<Cartola />} />
+            <Route path="/cartola/ranking" element={<CartolaRanking />} />
           </Route>
         </Route>
 

@@ -73,39 +73,32 @@ serve(async (req) => {
     { match_id, type: 'total_goals',  description: 'Menos de 2.5 gols',             odd: 2.00, metadata: { threshold: 3, direction: 'under' } },
   )
 
-  // 4. Artilheiros e cartões por jogador (da escalação)
+  // 4. Artilheiros por jogador — titulares + reservas completos
   for (const teamLineup of lineups) {
     const teamName = teamLineup.team.name
-    const players = [
-      ...(teamLineup.startXI ?? []).map((p: { player: unknown }) => p.player),
-      ...(teamLineup.substitutes ?? []).map((p: { player: unknown }) => p.player),
-    ]
+    const starters    = (teamLineup.startXI    ?? []).map((p: { player: unknown }) => ({ ...(p.player as object), starter: true }))
+    const substitutes = (teamLineup.substitutes ?? []).map((p: { player: unknown }) => ({ ...(p.player as object), starter: false }))
+    const players = [...starters, ...substitutes]  // todos os 11+subs
 
-    for (const player of players.slice(0, 5)) {  // top 5 por time
-      const p = player as { id: number; name: string; pos?: string }
+    for (const player of players) {
+      const p = player as { id: number; name: string; pos?: string; starter?: boolean }
       if (!p.id || !p.name) continue
 
-      // Goleador (atacantes e meias têm odd menor)
+      // Odds menores para titulares atacantes/meias
       const isForward = ['F', 'M'].includes(p.pos ?? '')
-      const goalOdd = isForward ? parseFloat((Math.random() * 1.5 + 2.5).toFixed(2)) : parseFloat((Math.random() * 2 + 4).toFixed(2))
+      const isStarter = p.starter !== false
+      const base = isForward && isStarter ? 2.5 : isStarter ? 4.0 : 5.5
+      const goalOdd = parseFloat((base + Math.random() * 1.5).toFixed(2))
+
       options.push({
         match_id,
         type: 'goalscorer',
         description: `${p.name} marca gol`,
-        odd: Math.min(goalOdd, 8.0),
-        metadata: { player_id: p.id, player_name: p.name, team: teamName },
+        odd: Math.min(goalOdd, 9.0),
+        metadata: { player_id: p.id, player_name: p.name, team: teamName, pos: p.pos ?? null, starter: isStarter },
       })
 
-      // Cartão amarelo (defensores e volantes têm odd menor)
-      const isDefMid = ['D', 'M'].includes(p.pos ?? '')
-      const cardOdd = isDefMid ? parseFloat((Math.random() * 2 + 3.5).toFixed(2)) : parseFloat((Math.random() * 2 + 5).toFixed(2))
-      options.push({
-        match_id,
-        type: 'yellow_card',
-        description: `${p.name} leva cartão amarelo`,
-        odd: Math.min(cardOdd, 9.0),
-        metadata: { player_id: p.id, player_name: p.name, team: teamName },
-      })
+      // Cartões removidos — apenas artilheiros
     }
   }
 
