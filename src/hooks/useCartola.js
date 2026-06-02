@@ -118,6 +118,7 @@ async function fetchCartolaPlayers({ position, search, sortBy } = {}) {
   let q = supabase
     .from('cartola_players')
     .select('*')
+    .eq('available', true)
     .order(sortBy === 'price' ? 'price' : 'avg_points', { ascending: false })
 
   if (position) q = q.eq('position', position)

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { X, Search, Star, ChevronDown, AlertTriangle } from 'lucide-react'
+import { X, Search, ChevronDown } from 'lucide-react'
 import { useCartolaPlayers } from '../hooks/useCartola'
 
 const POSITION_LABELS = { GK: 'Goleiro', DEF: 'Defensor', MID: 'Meia', FWD: 'Atacante' }
@@ -28,14 +28,17 @@ export default function PlayerPickerModal({
     sortBy,
   })
 
-  // Filtra localmente (search + team)
+  // Filtra localmente (search + team + seleções sem próximo jogo)
+  const fixturesLoaded = Object.keys(fixtures).length > 0
   const filtered = useMemo(() => {
     return players.filter(p => {
       if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false
       if (teamFilter && p.team_name !== teamFilter) return false
+      // Esconde jogadores de seleções sem próximo jogo (eliminadas do bracket)
+      if (fixturesLoaded && !fixtures[p.team_name]) return false
       return true
     })
-  }, [players, search, teamFilter])
+  }, [players, search, teamFilter, fixtures, fixturesLoaded])
 
   // Lista de times únicos para o filtro
   const teams = useMemo(() => {
@@ -49,9 +52,7 @@ export default function PlayerPickerModal({
 
   function isDisabled(player) {
     if (selectedPlayerIds.has(player.id)) return 'Já no time'
-    if (!player.available) return 'Eliminado'
     if (player.price > budget) return 'Sem crédito'
-    // Máximo 3 jogadores do mesmo time
     if ((teamCountMap[player.team_name] ?? 0) >= 3) return 'Máx. 3 por seleção'
     return null
   }
@@ -183,12 +184,6 @@ export default function PlayerPickerModal({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="text-white text-sm font-medium truncate">{player.name}</span>
-                        {!player.available && (
-                          <span className="shrink-0 text-[9px] font-bold bg-red-900/60 text-red-400 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-                            <AlertTriangle className="w-2.5 h-2.5" />
-                            elim.
-                          </span>
-                        )}
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-gray-500 text-xs truncate">{player.team_name}</span>
