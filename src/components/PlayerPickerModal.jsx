@@ -15,6 +15,7 @@ export default function PlayerPickerModal({
   selectedPlayerIds = new Set(),
   teamCountMap = {},
   budget,
+  fixtures = {},
   onSelect,
   onClose,
 }) {
@@ -151,6 +152,8 @@ export default function PlayerPickerModal({
                 const borderRight = 'lg:border-r lg:border-gray-800/40'
                 const borderBottom = 'lg:border-b lg:border-gray-800/40'
 
+                const fixture = fixtures?.[player.team_id] ?? null
+
                 return (
                   <button
                     key={player.id}
@@ -189,6 +192,9 @@ export default function PlayerPickerModal({
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-gray-500 text-xs truncate">{player.team_name}</span>
+                        {fixture && (
+                          <span className="text-gray-600 text-xs shrink-0">· vs {fixture.opponent}</span>
+                        )}
                       </div>
                     </div>
 

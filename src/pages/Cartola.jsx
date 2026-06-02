@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   FORMATIONS, BUDGET, buildSlots,
   useCartolaRound, useMyCartolaTeam,
-  useSaveCartolaTeam, useRoundPlayerScores,
+  useSaveCartolaTeam, useRoundPlayerScores, useRoundFixtures,
 } from '../hooks/useCartola'
 import CartolaField from '../components/CartolaField'
 import PlayerPickerModal from '../components/PlayerPickerModal'
@@ -43,6 +43,7 @@ export default function Cartola() {
   const { data: round, isLoading: roundLoading } = useCartolaRound()
   const { data: myTeam, isLoading: teamLoading }  = useMyCartolaTeam(round?.id)
   const { data: scores }                           = useRoundPlayerScores(round?.id)
+  const { data: fixtures = {} }                    = useRoundFixtures(round)
   const saveTeam = useSaveCartolaTeam()
 
   const [formation,       setFormation]       = useState('4-3-3')
@@ -250,6 +251,7 @@ export default function Cartola() {
         selectedPlayers={selectedPlayers}
         captainSlot={captainSlot}
         scores={scores}
+        fixtures={fixtures}
         isLocked={isLocked}
         onSlotClick={handleSlotClick}
       />
@@ -318,6 +320,7 @@ export default function Cartola() {
           selectedPlayerIds={selectedIds}
           teamCountMap={teamCountMap}
           budget={budgetLeft}
+          fixtures={fixtures}
           onSelect={handlePlayerSelect}
           onClose={() => setPickerSlot(null)}
         />

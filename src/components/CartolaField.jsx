@@ -8,9 +8,17 @@ const POSITION_COLORS = {
   FWD: { bg: 'bg-red-500/20',    border: 'border-red-500/60',    text: 'text-red-400',    label: 'ATA' },
 }
 
-function PlayerSlot({ slot, player, isCaptain, isLocked, scores, onSlotClick }) {
-  const colors = POSITION_COLORS[slot.position]
-  const score  = player ? (scores?.[player.id]?.total_points ?? null) : null
+function opponentAbbr(name) {
+  if (!name) return ''
+  const parts = name.trim().split(/\s+/)
+  // Se tiver só uma palavra, pega 3 letras; se tiver mais, pega iniciais
+  return parts.length === 1 ? name.slice(0, 3).toUpperCase() : parts.map(p => p[0]).join('').toUpperCase()
+}
+
+function PlayerSlot({ slot, player, isCaptain, isLocked, scores, fixtures, onSlotClick }) {
+  const colors  = POSITION_COLORS[slot.position]
+  const score   = player ? (scores?.[player.id]?.total_points ?? null) : null
+  const fixture = player ? (fixtures?.[player.team_id] ?? null) : null
 
   if (!player) {
     return (
@@ -79,7 +87,7 @@ function PlayerSlot({ slot, player, isCaptain, isLocked, scores, onSlotClick }) 
         )}
       </div>
 
-      {/* Nome + preço */}
+      {/* Nome + preço + adversário */}
       <div className="flex flex-col items-center">
         <span className="text-white text-[10px] font-semibold max-w-[56px] sm:max-w-[64px] truncate leading-tight text-center">
           {player.name.split(' ').pop()}
@@ -87,12 +95,17 @@ function PlayerSlot({ slot, player, isCaptain, isLocked, scores, onSlotClick }) 
         <span className={`text-[9px] font-bold ${colors.text}`}>
           C$ {player.price.toFixed(1)}
         </span>
+        {fixture && (
+          <span className="text-[8px] text-gray-400 leading-tight">
+            vs {opponentAbbr(fixture.opponent)}
+          </span>
+        )}
       </div>
     </button>
   )
 }
 
-export default function CartolaField({ formation, selectedPlayers, captainSlot, scores, isLocked, onSlotClick }) {
+export default function CartolaField({ formation, selectedPlayers, captainSlot, scores, fixtures, isLocked, onSlotClick }) {
   const rows = buildFieldRows(formation)
 
   return (
@@ -121,6 +134,7 @@ export default function CartolaField({ formation, selectedPlayers, captainSlot, 
                 isCaptain={captainSlot === slot.slotIndex}
                 isLocked={isLocked}
                 scores={scores}
+                fixtures={fixtures}
                 onSlotClick={onSlotClick}
               />
             ))}

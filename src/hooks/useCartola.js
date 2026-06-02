@@ -74,6 +74,40 @@ export function useCartolaRound() {
   })
 }
 
+// ── Jogos da rodada → adversários de cada seleção ──────────────
+async function fetchRoundFixtures(startDate, endDate) {
+  if (!startDate || !endDate) return {}
+  const { data } = await supabase
+    .from('matches')
+    .select('home_team, away_team, home_team_id, away_team_id, match_date')
+    .gte('match_date', startDate)
+    .lte('match_date', endDate.slice(0, 10) + 'T23:59:59Z')
+    .neq('status', 'CANC')
+    .order('match_date', { ascending: true })
+
+  // Mapa: team_id → { opponent, matchDate }
+  // Cada time pode ter mais de 1 jogo na rodada (ex: fase de grupos tem 3 rodadas)
+  const map = {}
+  for (const m of data ?? []) {
+    if (m.home_team_id && !map[m.home_team_id]) {
+      map[m.home_team_id] = { opponent: m.away_team, matchDate: m.match_date }
+    }
+    if (m.away_team_id && !map[m.away_team_id]) {
+      map[m.away_team_id] = { opponent: m.home_team, matchDate: m.match_date }
+    }
+  }
+  return map
+}
+
+export function useRoundFixtures(round) {
+  return useQuery({
+    queryKey: ['round-fixtures', round?.id],
+    queryFn:  () => fetchRoundFixtures(round?.start_date, round?.end_date),
+    enabled:  !!round?.id,
+    staleTime: 300_000, // 5min — não muda com frequência
+  })
+}
+
 export function useCartolaRounds() {
   return useQuery({
     queryKey: ['cartola-rounds'],
