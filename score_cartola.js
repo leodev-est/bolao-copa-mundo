@@ -135,10 +135,11 @@ async function processMatch(match, roundId) {
   }
 
   const rows = players.map(player => {
-    const pid          = player.api_player_id
-    const isHome       = player.team_id === match.home_team_id
-    const goalsConceded = isHome ? (match.score_away ?? 1) : (match.score_home ?? 1)
-    const cleanSheet   = goalsConceded === 0
+    const pid = player.api_player_id
+    const isHome = player.team_id === match.home_team_id
+    // Só considera clean sheet se o placar está confirmado (não null)
+    const conceded = isHome ? match.score_away : match.score_home
+    const cleanSheet = conceded !== null && conceded !== undefined && conceded === 0
 
     const playerGoals    = goals.filter(e => e.pid === pid).length
     const playerAssists  = assists.filter(e => e.pid === pid).length
@@ -222,7 +223,7 @@ const BASE_PRICES_TIER = {
 }
 
 function tierOf(team)      { return TEAM_TIERS_PRICE.elite.has(team) ? 'elite' : TEAM_TIERS_PRICE.forte.has(team) ? 'forte' : TEAM_TIERS_PRICE.medio.has(team) ? 'medio' : 'fraco' }
-function basePriceOf(team, pos) { const t = tierOf(team); return BASE_PRICES_TIER[t][pos] ?? BASE_PRICES_TIER[t].MID }
+function basePriceOf(team, pos) { const t = tierOf(team); return BASE_PRICES_TIER[t]?.[pos] ?? BASE_PRICES_TIER[t]?.MID ?? 6 }
 function clamp(v,mn,mx)    { return Math.max(mn, Math.min(mx, v)) }
 function roundHalf(v)      { return Math.round(v * 2) / 2 }
 

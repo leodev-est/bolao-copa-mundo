@@ -2,17 +2,23 @@ name: Copa — Sync · Resolver Palpites · Cartola
 
 on:
   schedule:
-    # A cada hora entre 12h e 00h UTC durante a Copa (cobre todos os jogos)
     # Copa do Mundo 2026: 11 Jun – 19 Jul
-    - cron: '0 12-23 11-30 6 *'   # Junho: dia 11–30
-    - cron: '0 12-23 1-19  7 *'   # Julho: dia 1–19
-  workflow_dispatch:               # Permite rodar manualmente pelo GitHub UI
+    # Sede nos EUA/Canadá/México — jogos até 21h EDT = 01h UTC (terminam ~03h UTC)
+    # Cobre 24h por dia durante toda a Copa
+    - cron: '0 * 11-30 6 *'   # Junho: todo dia, toda hora
+    - cron: '0 * 1-19  7 *'   # Julho: todo dia, toda hora
+  workflow_dispatch:           # Roda manualmente pelo GitHub UI
+
+# Garante que apenas um job roda por vez — evita conflitos de escrita no banco
+concurrency:
+  group: copa-sync
+  cancel-in-progress: false   # espera o atual terminar, não cancela
 
 jobs:
   atualizar:
-    name: Sincronizar, resolver palpites e pontuar Cartola
+    name: Sync · Resolver Palpites · Pontuar Cartola
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -41,7 +47,7 @@ jobs:
           VITE_FOOTBALL_DATA_KEY:    ${{ secrets.VITE_FOOTBALL_DATA_KEY }}
         run: node resolve_bets.js
 
-      - name: 3 · Pontuar Cartola
+      - name: 3 · Pontuar Cartola e ajustar preços
         env:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

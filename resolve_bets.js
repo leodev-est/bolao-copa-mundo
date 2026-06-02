@@ -93,21 +93,24 @@ async function main() {
       const resultOk   = bet.predicted_result === actualResult
 
       let pointsWon = 0
-      if (exactScore)    pointsWon += bet.points_wagered * (bet.odd ?? 1)
+      // Odd mínima 1 para evitar multiplicação por 0; só aplica se acertou placar exato
+      const safeOdd = typeof bet.odd === 'number' && bet.odd > 0 ? bet.odd : 1
+      if (exactScore)    pointsWon += bet.points_wagered * safeOdd
       else if (resultOk) pointsWon += bet.points_wagered * 1.3
 
       // Artilheiros: +0.5 por slot correto
       const scorerUpdates = []
       for (const scorer of (bet.bet_scorers ?? [])) {
+        if (!scorer?.id) continue   // guard contra null
         let correct = false
         if (scorer.player_id) {
           correct = goals.some(g =>
             g.player_id === scorer.player_id &&
             (scorer.team === 'home' ? g.team === match.home_team : g.team === match.away_team)
           )
-        } else {
+        } else if (scorer.player_name) {
           correct = goals.some(g =>
-            g.player_name?.toLowerCase() === scorer.player_name?.toLowerCase()
+            g.player_name?.toLowerCase() === scorer.player_name.toLowerCase()
           )
         }
         if (correct) pointsWon += 0.5
@@ -145,9 +148,10 @@ async function main() {
       if (threshold == null) continue
 
       const total  = actualHome + actualAway
+      // "over X" = total MAIOR que threshold; "under X" = total MENOR OU IGUAL
       const result = direction === 'over'
-        ? total >= threshold ? 'won' : 'lost'
-        : total  < threshold ? 'won' : 'lost'
+        ? total >  threshold ? 'won' : 'lost'
+        : total <= threshold ? 'won' : 'lost'
 
       if (!DRY_RUN) {
         await supabase.from('bet_options').update({ result }).eq('id', opt.id)
