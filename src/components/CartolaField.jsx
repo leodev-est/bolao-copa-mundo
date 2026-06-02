@@ -18,7 +18,7 @@ function opponentAbbr(name) {
 function PlayerSlot({ slot, player, isCaptain, isLocked, scores, fixtures, onSlotClick }) {
   const colors  = POSITION_COLORS[slot.position]
   const score   = player ? (scores?.[player.id]?.total_points ?? null) : null
-  const fixture = player ? (fixtures?.[player.team_id] ?? null) : null
+  const fixture = player ? (fixtures?.[player.team_name] ?? null) : null
 
   if (!player) {
     return (

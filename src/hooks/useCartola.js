@@ -85,15 +85,15 @@ async function fetchRoundFixtures(startDate, endDate) {
     .neq('status', 'CANC')
     .order('match_date', { ascending: true })
 
-  // Mapa: team_id → { opponent, matchDate }
-  // Cada time pode ter mais de 1 jogo na rodada (ex: fase de grupos tem 3 rodadas)
+  // Mapa: team_name → { opponent, matchDate }
+  // Usa team_name porque team_id pode ser NULL em cartola_players
   const map = {}
   for (const m of data ?? []) {
-    if (m.home_team_id && !map[m.home_team_id]) {
-      map[m.home_team_id] = { opponent: m.away_team, matchDate: m.match_date }
+    if (m.home_team && !map[m.home_team]) {
+      map[m.home_team] = { opponent: m.away_team, matchDate: m.match_date }
     }
-    if (m.away_team_id && !map[m.away_team_id]) {
-      map[m.away_team_id] = { opponent: m.home_team, matchDate: m.match_date }
+    if (m.away_team && !map[m.away_team]) {
+      map[m.away_team] = { opponent: m.home_team, matchDate: m.match_date }
     }
   }
   return map

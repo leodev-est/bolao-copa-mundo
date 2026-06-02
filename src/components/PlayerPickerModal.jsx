@@ -152,7 +152,7 @@ export default function PlayerPickerModal({
                 const borderRight = 'lg:border-r lg:border-gray-800/40'
                 const borderBottom = 'lg:border-b lg:border-gray-800/40'
 
-                const fixture = fixtures?.[player.team_id] ?? null
+                const fixture = fixtures?.[player.team_name] ?? null
 
                 return (
                   <button
