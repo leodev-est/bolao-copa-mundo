@@ -74,19 +74,17 @@ export function useCartolaRound() {
   })
 }
 
-// ── Jogos da rodada → adversários de cada seleção ──────────────
-async function fetchRoundFixtures(startDate, endDate) {
-  if (!startDate || !endDate) return {}
+// ── Próximo jogo de cada seleção (independente de rodada do Cartola) ──────────
+async function fetchNextFixtures() {
+  // Busca todos os jogos ainda não iniciados, ordenados por data
   const { data } = await supabase
     .from('matches')
-    .select('home_team, away_team, home_team_id, away_team_id, match_date')
-    .gte('match_date', startDate)
-    .lte('match_date', endDate.slice(0, 10) + 'T23:59:59Z')
-    .neq('status', 'CANC')
+    .select('home_team, away_team, match_date')
+    .eq('status', 'NS')
     .order('match_date', { ascending: true })
 
   // Mapa: team_name → { opponent, matchDate }
-  // Usa team_name porque team_id pode ser NULL em cartola_players
+  // Primeiro jogo encontrado por time = próximo jogo
   const map = {}
   for (const m of data ?? []) {
     if (m.home_team && !map[m.home_team]) {
@@ -99,12 +97,11 @@ async function fetchRoundFixtures(startDate, endDate) {
   return map
 }
 
-export function useRoundFixtures(round) {
+export function useRoundFixtures() {
   return useQuery({
-    queryKey: ['round-fixtures', round?.id],
-    queryFn:  () => fetchRoundFixtures(round?.start_date, round?.end_date),
-    enabled:  !!round?.id,
-    staleTime: 300_000, // 5min — não muda com frequência
+    queryKey: ['next-fixtures'],
+    queryFn:  fetchNextFixtures,
+    staleTime: 300_000,
   })
 }
 

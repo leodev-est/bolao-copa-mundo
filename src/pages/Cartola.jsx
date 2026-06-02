@@ -43,7 +43,7 @@ export default function Cartola() {
   const { data: round, isLoading: roundLoading } = useCartolaRound()
   const { data: myTeam, isLoading: teamLoading }  = useMyCartolaTeam(round?.id)
   const { data: scores }                           = useRoundPlayerScores(round?.id)
-  const { data: fixtures = {} }                    = useRoundFixtures(round)
+  const { data: fixtures = {} }                    = useRoundFixtures()
   const saveTeam = useSaveCartolaTeam()
 
   const [formation,       setFormation]       = useState('4-3-3')
