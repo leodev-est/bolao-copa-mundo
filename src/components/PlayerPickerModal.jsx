@@ -60,8 +60,8 @@ export default function PlayerPickerModal({
       {/* Overlay */}
       <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      {/* Sheet — sobe da base no mobile, modal centralizado no desktop */}
-      <div className="fixed z-50 bottom-0 inset-x-0 md:inset-x-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-[480px] md:max-h-[80vh] bg-gray-900 md:rounded-2xl rounded-t-2xl flex flex-col max-h-[85vh] shadow-2xl border border-gray-700/50">
+      {/* Sheet — sobe da base no mobile, modal grande centralizado no desktop */}
+      <div className="fixed z-50 bottom-0 inset-x-0 md:inset-x-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-[780px] md:max-h-[90vh] bg-gray-900 md:rounded-2xl rounded-t-2xl flex flex-col max-h-[92vh] shadow-2xl border border-gray-700/50">
 
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-800">
@@ -125,7 +125,14 @@ export default function PlayerPickerModal({
           </div>
         </div>
 
-        {/* Lista de jogadores */}
+        {/* Contagem de resultados */}
+        {!isLoading && filtered.length > 0 && (
+          <div className="px-4 py-1.5 border-b border-gray-800/60">
+            <span className="text-gray-600 text-xs">{filtered.length} jogadores</span>
+          </div>
+        )}
+
+        {/* Lista de jogadores — grid 2 colunas no desktop */}
         <div className="overflow-y-auto flex-1">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
@@ -134,65 +141,66 @@ export default function PlayerPickerModal({
           ) : filtered.length === 0 ? (
             <p className="text-center text-gray-500 py-12 text-sm">Nenhum jogador encontrado</p>
           ) : (
-            <ul className="divide-y divide-gray-800/60">
-              {filtered.map(player => {
+            <div className="grid grid-cols-1 md:grid-cols-2 divide-y divide-gray-800/40 md:divide-y-0 md:gap-0">
+              {filtered.map((player, idx) => {
                 const disabledReason = isDisabled(player)
                 const initials = player.name.split(' ').map(n => n[0]).slice(0, 2).join('')
                 const imgUrl   = player.photo_url || player.team_flag || null
                 const posColor = POSITION_COLORS[player.position] ?? ''
+                // Borda entre colunas no desktop
+                const borderRight = 'md:border-r md:border-gray-800/40'
+                const borderBottom = 'md:border-b md:border-gray-800/40'
 
                 return (
-                  <li key={player.id}>
-                    <button
-                      onClick={() => !disabledReason && onSelect(slot, player)}
-                      disabled={!!disabledReason}
-                      className={`
-                        w-full flex items-center gap-3 px-4 py-3 text-left transition-colors
-                        ${disabledReason ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-800/60 cursor-pointer'}
-                      `}
-                    >
-                      {/* Avatar */}
-                      <div className={`w-10 h-10 rounded-full overflow-hidden flex items-center justify-center text-xs font-bold shrink-0 ${posColor}`}>
-                        {imgUrl ? (
-                          <img
-                            src={imgUrl}
-                            alt={player.name}
-                            className={`${player.photo_url ? 'w-full h-full object-cover' : 'w-6 h-6 object-contain'}`}
-                            onError={e => { e.currentTarget.style.display='none'; e.currentTarget.nextSibling.style.display='flex' }}
-                          />
-                        ) : null}
-                        <span style={{ display: imgUrl ? 'none' : 'flex' }}>{initials}</span>
-                      </div>
+                  <button
+                    key={player.id}
+                    onClick={() => !disabledReason && onSelect(slot, player)}
+                    disabled={!!disabledReason}
+                    className={`
+                      w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors
+                      ${idx % 2 === 0 ? borderRight : ''}
+                      ${borderBottom}
+                      ${disabledReason ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-800/50 cursor-pointer'}
+                    `}
+                  >
+                    {/* Avatar */}
+                    <div className={`w-9 h-9 rounded-full overflow-hidden flex items-center justify-center text-xs font-bold shrink-0 ${posColor}`}>
+                      {imgUrl ? (
+                        <img
+                          src={imgUrl}
+                          alt={player.name}
+                          className={`${player.photo_url ? 'w-full h-full object-cover' : 'w-5 h-5 object-contain'}`}
+                          onError={e => { e.currentTarget.style.display='none'; e.currentTarget.nextSibling.style.display='flex' }}
+                        />
+                      ) : null}
+                      <span style={{ display: imgUrl ? 'none' : 'flex' }}>{initials}</span>
+                    </div>
 
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-white text-sm font-medium truncate">{player.name}</span>
-                          {!player.available && (
-                            <span className="shrink-0 text-[9px] font-bold bg-red-900/60 text-red-400 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-                              <AlertTriangle className="w-2.5 h-2.5" />
-                              eliminado
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-gray-500 text-xs truncate">{player.team_name}</span>
-                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${posColor}`}>
-                            {player.position}
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-white text-sm font-medium truncate">{player.name}</span>
+                        {!player.available && (
+                          <span className="shrink-0 text-[9px] font-bold bg-red-900/60 text-red-400 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                            elim.
                           </span>
-                        </div>
+                        )}
                       </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-gray-500 text-xs truncate">{player.team_name}</span>
+                      </div>
+                    </div>
 
-                      {/* Preço + média */}
-                      <div className="text-right shrink-0">
-                        <p className="text-emerald-400 font-bold text-sm">C$ {player.price.toFixed(1)}</p>
-                        <p className="text-gray-500 text-xs">{player.avg_points.toFixed(1)} pts/rod</p>
-                      </div>
-                    </button>
-                  </li>
+                    {/* Preço + média */}
+                    <div className="text-right shrink-0">
+                      <p className="text-emerald-400 font-bold text-sm">C$ {player.price.toFixed(1)}</p>
+                      <p className="text-gray-500 text-[11px]">{player.avg_points.toFixed(1)} pts/rod</p>
+                    </div>
+                  </button>
                 )
               })}
-            </ul>
+            </div>
           )}
         </div>
       </div>
