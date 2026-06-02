@@ -14,7 +14,7 @@ function SlotActionMenu({ slot, isCaptain, onSetCaptain, onRemove, onClose }) {
   return (
     <>
       <div className="fixed inset-0 z-30" onClick={onClose} />
-      <div className="fixed z-40 bottom-8 left-1/2 -translate-x-1/2 bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden w-64">
+      <div className="fixed z-40 bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden w-64">
         <button
           onClick={() => { onSetCaptain(); onClose() }}
           className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-gray-700/60 transition-colors text-left"
@@ -190,7 +190,7 @@ export default function Cartola() {
       </div>
 
       {/* Barra de status */}
-      <div className="grid grid-cols-3 gap-2 mb-4">
+      <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mb-4">
         {/* Orçamento */}
         <div className={`rounded-xl px-3 py-2.5 ${overBudget ? 'bg-red-900/30 border border-red-700/40' : 'bg-gray-900 border border-gray-800'}`}>
           <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Saldo</p>

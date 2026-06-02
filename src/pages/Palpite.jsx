@@ -15,14 +15,14 @@ function ScoreStepper({ value, onChange, disabled }) {
     <div className="flex items-center gap-2">
       <button type="button" onClick={() => onChange(Math.max(0, value - 1))}
         disabled={disabled || value === 0}
-        className="w-9 h-9 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center text-white hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-        <Minus className="w-3.5 h-3.5" />
+        className="w-11 h-11 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center text-white hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors active:scale-95">
+        <Minus className="w-4 h-4" />
       </button>
       <span className="w-10 text-center text-3xl font-black text-white tabular-nums">{value}</span>
       <button type="button" onClick={() => onChange(Math.min(9, value + 1))}
         disabled={disabled}
-        className="w-9 h-9 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center text-white hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-        <Plus className="w-3.5 h-3.5" />
+        className="w-11 h-11 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center text-white hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors active:scale-95">
+        <Plus className="w-4 h-4" />
       </button>
     </div>
   )
@@ -368,18 +368,18 @@ export default function Palpite() {
         </div>
 
         {/* Steppers */}
-        <div className="flex items-center justify-center gap-6 mb-6">
-          <div className="flex flex-col items-center gap-3">
-            <span className="text-xs text-gray-500 font-medium truncate max-w-[80px] text-center">{match.home_team}</span>
+        <div className="flex items-center justify-center gap-3 sm:gap-6 mb-6">
+          <div className="flex flex-col items-center gap-3 flex-1">
+            <span className="text-xs text-gray-500 font-medium truncate max-w-[90px] text-center">{match.home_team}</span>
             <ScoreStepper value={homeGoals} onChange={setHomeGoals} disabled={matchStarted} />
           </div>
-          <div className="flex flex-col items-center gap-1">
+          <div className="flex flex-col items-center gap-1 shrink-0">
             <span className="text-gray-600 text-xl font-black">×</span>
             <ResultBadge result={predictedResult} homeName={match.home_team} awayName={match.away_team} />
             <span className="text-xs text-gray-600 mt-1">odd {formatOdd(scoreOdd)}</span>
           </div>
-          <div className="flex flex-col items-center gap-3">
-            <span className="text-xs text-gray-500 font-medium truncate max-w-[80px] text-center">{match.away_team}</span>
+          <div className="flex flex-col items-center gap-3 flex-1">
+            <span className="text-xs text-gray-500 font-medium truncate max-w-[90px] text-center">{match.away_team}</span>
             <ScoreStepper value={awayGoals} onChange={setAwayGoals} disabled={matchStarted} />
           </div>
         </div>

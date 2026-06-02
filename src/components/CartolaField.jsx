@@ -110,9 +110,9 @@ export default function CartolaField({ formation, selectedPlayers, captainSlot, 
       </div>
 
       {/* Slots por linha */}
-      <div className="relative flex flex-col gap-2 py-4 px-2">
+      <div className="relative flex flex-col gap-2 py-4 px-1">
         {rows.map((row, rowIdx) => (
-          <div key={rowIdx} className="flex justify-center gap-2 sm:gap-3">
+          <div key={rowIdx} className="flex justify-center gap-1 sm:gap-2 md:gap-3">
             {row.map(slot => (
               <PlayerSlot
                 key={slot.slotIndex}

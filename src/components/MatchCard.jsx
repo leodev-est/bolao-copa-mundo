@@ -58,11 +58,11 @@ export default function MatchCard({ match }) {
               ⚽
             </div>
           )}
-          <span className="text-sm font-semibold text-white text-center leading-tight">{match.home_team}</span>
+          <span className="text-sm font-semibold text-white text-center leading-tight line-clamp-2">{match.home_team}</span>
         </div>
 
         {/* Placar / Horário */}
-        <div className="flex flex-col items-center gap-1 min-w-[80px]">
+        <div className="flex flex-col items-center gap-1 min-w-[70px] sm:min-w-[80px]">
           {(isFinished || isLive) && match.score_home !== null ? (
             <div className="flex items-center gap-2">
               <span className="text-2xl font-black text-white">{match.score_home}</span>
@@ -93,7 +93,7 @@ export default function MatchCard({ match }) {
               ⚽
             </div>
           )}
-          <span className="text-sm font-semibold text-white text-center leading-tight">{match.away_team}</span>
+          <span className="text-sm font-semibold text-white text-center leading-tight line-clamp-2">{match.away_team}</span>
         </div>
       </div>
 

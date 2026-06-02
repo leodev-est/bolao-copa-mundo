@@ -19,7 +19,7 @@ function StatCard({ icon: Icon, label, value, sub, color = 'emerald' }) {
       <div className={`inline-flex p-2 rounded-lg mb-3 ${colors[color]}`}>
         <Icon className={`w-4 h-4 ${colors[color].split(' ')[0]}`} />
       </div>
-      <p className="text-2xl font-black text-white">{value}</p>
+      <p className="text-xl sm:text-2xl font-black text-white">{value}</p>
       <p className="text-xs text-gray-500 mt-0.5">{label}</p>
       {sub && <p className="text-xs text-gray-600 mt-0.5">{sub}</p>}
     </div>
@@ -148,7 +148,7 @@ export default function Perfil() {
               <button
                 key={s}
                 onClick={() => setFilterStatus(s)}
-                className={`px-2 py-1 text-xs rounded-lg font-medium transition-colors ${
+                className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors min-w-[36px] ${
                   filterStatus === s ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'
                 }`}
               >

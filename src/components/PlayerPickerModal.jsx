@@ -141,15 +141,15 @@ export default function PlayerPickerModal({
           ) : filtered.length === 0 ? (
             <p className="text-center text-gray-500 py-12 text-sm">Nenhum jogador encontrado</p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 divide-y divide-gray-800/40 md:divide-y-0 md:gap-0">
+            <div className="grid grid-cols-1 lg:grid-cols-2 divide-y divide-gray-800/40 lg:divide-y-0 lg:gap-0">
               {filtered.map((player, idx) => {
                 const disabledReason = isDisabled(player)
                 const initials = player.name.split(' ').map(n => n[0]).slice(0, 2).join('')
                 const imgUrl   = player.photo_url || player.team_flag || null
                 const posColor = POSITION_COLORS[player.position] ?? ''
                 // Borda entre colunas no desktop
-                const borderRight = 'md:border-r md:border-gray-800/40'
-                const borderBottom = 'md:border-b md:border-gray-800/40'
+                const borderRight = 'lg:border-r lg:border-gray-800/40'
+                const borderBottom = 'lg:border-b lg:border-gray-800/40'
 
                 return (
                   <button
@@ -157,7 +157,7 @@ export default function PlayerPickerModal({
                     onClick={() => !disabledReason && onSelect(slot, player)}
                     disabled={!!disabledReason}
                     className={`
-                      w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors
+                      w-full flex items-center gap-3 px-4 py-3 text-left transition-colors
                       ${idx % 2 === 0 ? borderRight : ''}
                       ${borderBottom}
                       ${disabledReason ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-800/50 cursor-pointer'}
