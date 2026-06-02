@@ -34,7 +34,7 @@ export default function Jogos() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-black text-white">Jogos</h1>
-          <p className="text-gray-500 text-sm mt-0.5">Copa do Mundo 2026</p>
+          <p className="text-gray-500 text-sm mt-0.5">Bolão da Gangue 🤙</p>
         </div>
         <button
           onClick={() => refetch()}

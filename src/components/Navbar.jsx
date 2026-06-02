@@ -26,8 +26,8 @@ export default function Navbar() {
         <div className="flex items-center gap-2 mb-8 px-2">
           <Trophy className="text-emerald-400 w-6 h-6" />
           <span className="font-bold text-white text-lg leading-tight">
-            Bolão <br />
-            <span className="text-emerald-400 text-sm font-semibold">Copa 2026</span>
+            Bolão da <br />
+            <span className="text-emerald-400 text-sm font-semibold">Gangue 🤙</span>
           </span>
         </div>
 

@@ -70,8 +70,8 @@ export default function Login() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-600 rounded-2xl mb-4 shadow-lg shadow-emerald-900/50">
             <Trophy className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-black text-white">Bolão</h1>
-          <p className="text-emerald-400 font-semibold text-lg">Copa do Mundo 2026</p>
+          <h1 className="text-3xl font-black text-white">Bolão da Gangue</h1>
+          <p className="text-emerald-400 font-semibold text-lg">Copa do Mundo 2026 🤙</p>
           <p className="text-gray-500 text-sm mt-2">Faça seus palpites e dispute com os amigos</p>
         </div>
 

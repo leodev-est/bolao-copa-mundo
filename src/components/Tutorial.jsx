@@ -195,7 +195,7 @@ function WelcomePopup({ onNext }) {
         <div style={{ width: 76, height: 76, background: 'linear-gradient(135deg,#059669,#047857)', borderRadius: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', boxShadow: '0 12px 30px rgba(5,150,105,0.35)' }}>
           <Trophy style={{ width: 38, height: 38, color: '#fff' }} />
         </div>
-        <h2 style={{ color: '#fff', fontWeight: 900, fontSize: 24, margin: '0 0 8px' }}>Bem-vindo ao Bolão! 🏆</h2>
+        <h2 style={{ color: '#fff', fontWeight: 900, fontSize: 24, margin: '0 0 8px' }}>Bolão da Gangue! 🤙</h2>
         <p style={{ color: '#9ca3af', fontSize: 14, lineHeight: 1.7, margin: 0 }}>
           Vamos te guiar pelas telas do app para você conhecer tudo antes da Copa começar.
         </p>
