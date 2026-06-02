@@ -270,12 +270,13 @@ export function useSaveCartolaTeam() {
       const totalSpent = Object.values(players).reduce((acc, p) => acc + (p?.price ?? 0), 0)
 
       // Cria ou atualiza o cartola_team
-      const { data: existing } = await supabase
+      const { data: existing, error: selectErr } = await supabase
         .from('cartola_teams')
         .select('id')
         .eq('user_id', user.id)
         .eq('round_id', roundId)
         .maybeSingle()
+      if (selectErr) throw selectErr
 
       let teamId
 

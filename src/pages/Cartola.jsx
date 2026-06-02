@@ -51,6 +51,7 @@ export default function Cartola() {
   const [pickerSlot,      setPickerSlot]      = useState(null) // slot aguardando seleção
   const [actionSlot,      setActionSlot]      = useState(null) // slot com menu aberto
   const [saved,           setSaved]           = useState(false)
+  const [saveError,       setSaveError]       = useState('')
 
   // Quando o time salvo carregar, popula o estado local
   useEffect(() => {
@@ -134,6 +135,7 @@ export default function Cartola() {
 
   async function handleConfirm() {
     if (!isComplete || overBudget || !hasCaptain || !round) return
+    setSaveError('')
     try {
       await saveTeam.mutateAsync({
         roundId:    round.id,
@@ -145,6 +147,7 @@ export default function Cartola() {
       setTimeout(() => setSaved(false), 3000)
     } catch (err) {
       console.error('Erro ao salvar time:', err)
+      setSaveError(err?.message ?? 'Erro ao salvar. Tente novamente.')
     }
   }
 
@@ -285,6 +288,17 @@ export default function Cartola() {
               'Confirmar time'
             )}
           </button>
+
+          {saveError && (
+            <div className="flex items-start gap-2 p-3 bg-red-900/30 border border-red-700/50 rounded-xl text-red-400 text-xs">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold mb-0.5">Erro ao salvar o time</p>
+                <p className="text-red-400/80">{saveError}</p>
+                <p className="text-red-400/60 mt-1">Tente fazer logout e entrar novamente se o problema persistir.</p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
