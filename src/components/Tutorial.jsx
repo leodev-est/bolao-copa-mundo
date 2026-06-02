@@ -1,422 +1,419 @@
-import { useState, useEffect } from 'react'
-import { ChevronRight, ChevronLeft, Trophy, Calendar, BarChart2, Shirt } from 'lucide-react'
+/**
+ * Tutorial interativo de primeiro acesso.
+ * Mostra as telas reais com overlay + spotlight nas abas de navegação.
+ * O usuário é forçado a clicar nas abas para navegar.
+ * Apenas 3 pop-ups: boas-vindas, pontuação do Cartola e tela final.
+ */
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { ChevronRight, ChevronLeft, Trophy, MousePointer } from 'lucide-react'
 
 const TUTORIAL_KEY = 'bolao_tutorial_v1'
+const PAD = 10 // padding em torno do elemento destacado
 
-// ── Visuais de cada etapa ───────────────────────────────────────────
+// ── Utilitários ─────────────────────────────────────────────────────
 
-function MatchMini() {
+function getFirstVisible(selector) {
+  const els = document.querySelectorAll(selector)
+  for (const el of els) {
+    const r = el.getBoundingClientRect()
+    if (r.width > 0 && r.height > 0 && r.top >= 0) return { el, r }
+  }
+  return null
+}
+
+function useSpotlightRect(selector) {
+  const [rect, setRect] = useState(null)
+
+  useEffect(() => {
+    if (!selector) { setRect(null); return }
+    let raf
+
+    function update() {
+      const found = getFirstVisible(selector)
+      if (found) {
+        const r = found.r
+        setRect({ top: r.top - PAD, left: r.left - PAD, bottom: r.bottom + PAD, right: r.right + PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 })
+      } else {
+        // Tenta de novo se o elemento ainda não renderizou
+        raf = requestAnimationFrame(update)
+      }
+    }
+
+    update()
+    window.addEventListener('resize', update)
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', update) }
+  }, [selector])
+
+  return rect
+}
+
+// ── Overlay com spotlight (4 peças ao redor do buraco) ──────────────
+
+function SpotlightOverlay({ rect, opacity = 0.82, onBlockedClick }) {
+  const dark = `rgba(0,0,0,${opacity})`
+
+  if (!rect) return (
+    <div
+      onClick={onBlockedClick}
+      style={{ position: 'fixed', inset: 0, background: dark, zIndex: 200 }}
+    />
+  )
+
+  const { top, left, bottom, right, width, height } = rect
+
   return (
-    <div className="bg-gray-900 rounded-2xl p-4 border border-gray-700 w-full max-w-[300px] mx-auto">
-      <p className="text-[10px] text-gray-500 text-center mb-3 uppercase tracking-wider font-semibold">Copa do Mundo · Grupo C</p>
-      <div className="flex items-center justify-between px-2">
-        <div className="flex flex-col items-center gap-2 flex-1">
-          <div className="w-12 h-12 rounded-full bg-emerald-900/60 border-2 border-emerald-500/40 flex items-center justify-center">
-            <span className="text-lg">🇧🇷</span>
-          </div>
-          <span className="text-white text-xs font-bold">Brasil</span>
-        </div>
-        <div className="flex flex-col items-center gap-1 px-2">
-          <div className="bg-gray-800 rounded-xl px-4 py-2 border border-gray-700">
-            <span className="text-gray-400 font-black text-xl">×</span>
-          </div>
-          <span className="text-[10px] text-gray-500">12 Jun · 18h</span>
-        </div>
-        <div className="flex flex-col items-center gap-2 flex-1">
-          <div className="w-12 h-12 rounded-full bg-red-900/40 border-2 border-red-500/30 flex items-center justify-center">
-            <span className="text-lg">🇲🇦</span>
-          </div>
-          <span className="text-white text-xs font-bold">Marrocos</span>
-        </div>
-      </div>
-      {/* Pulsing CTA */}
-      <div className="mt-4 flex justify-center">
-        <div className="relative">
-          <div className="absolute inset-0 bg-emerald-500 rounded-full animate-ping opacity-30" />
-          <div className="relative bg-emerald-600 text-white text-xs font-bold px-5 py-2 rounded-full flex items-center gap-1.5">
-            Fazer Palpite <ChevronRight className="w-3 h-3" />
-          </div>
-        </div>
-      </div>
-    </div>
+    <>
+      {/* Topo */}
+      <div onClick={onBlockedClick} style={{ position: 'fixed', top: 0, left: 0, right: 0, height: top, background: dark, zIndex: 200 }} />
+      {/* Baixo */}
+      <div onClick={onBlockedClick} style={{ position: 'fixed', top: bottom, left: 0, right: 0, bottom: 0, background: dark, zIndex: 200 }} />
+      {/* Esquerda */}
+      <div onClick={onBlockedClick} style={{ position: 'fixed', top, left: 0, width: left, height, background: dark, zIndex: 200 }} />
+      {/* Direita */}
+      <div onClick={onBlockedClick} style={{ position: 'fixed', top, left: right, right: 0, height, background: dark, zIndex: 200 }} />
+      {/* Borda luminosa ao redor do spotlight */}
+      <div
+        style={{
+          position: 'fixed', top, left, width, height, zIndex: 200,
+          border: '2px solid rgba(52,211,153,0.9)',
+          borderRadius: 14,
+          boxShadow: '0 0 0 4px rgba(52,211,153,0.15), 0 0 24px rgba(52,211,153,0.35)',
+          pointerEvents: 'none',
+        }}
+      />
+    </>
   )
 }
 
-function BetMini() {
-  return (
-    <div className="bg-gray-900 rounded-2xl p-4 border border-gray-700 w-full max-w-[300px] mx-auto space-y-3">
-      <div>
-        <p className="text-[10px] text-gray-500 text-center mb-2 uppercase tracking-wider font-semibold">① Palpite de Placar</p>
-        <div className="flex items-center justify-center gap-3">
-          <div className="bg-gray-800 rounded-xl px-5 py-2.5 border border-emerald-500/40">
-            <span className="text-white font-black text-2xl">2</span>
-          </div>
-          <span className="text-gray-600 font-bold text-lg">×</span>
-          <div className="bg-gray-800 rounded-xl px-5 py-2.5 border border-gray-600">
-            <span className="text-white font-black text-2xl">1</span>
-          </div>
-        </div>
-      </div>
-      <div>
-        <p className="text-[10px] text-gray-500 text-center mb-2 uppercase tracking-wider font-semibold">② Resultado</p>
-        <div className="flex gap-2 justify-center flex-wrap">
-          <span className="bg-emerald-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-full ring-2 ring-emerald-400/40">Brasil ✓</span>
-          <span className="bg-gray-800 text-gray-400 text-[10px] font-bold px-3 py-1.5 rounded-full border border-gray-700">Empate</span>
-          <span className="bg-gray-800 text-gray-400 text-[10px] font-bold px-3 py-1.5 rounded-full border border-gray-700">Marrocos</span>
-        </div>
-      </div>
-      <div>
-        <p className="text-[10px] text-gray-500 text-center mb-2 uppercase tracking-wider font-semibold">③ Artilheiro (bônus)</p>
-        <div className="bg-gray-800 rounded-xl p-2.5 border border-gray-700 flex items-center gap-2.5">
-          <span className="text-xl">⚽</span>
-          <div>
-            <p className="text-white text-[11px] font-semibold">Vinicius Jr.</p>
-            <p className="text-emerald-400 text-[10px]">+0.5 pts se marcar</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
+// ── Tooltip posicionado acima ou abaixo do spotlight ─────────────────
 
-function ScoringMini() {
-  return (
-    <div className="bg-gray-900 rounded-2xl p-4 border border-gray-700 w-full max-w-[300px] mx-auto space-y-3">
-      {[
-        { icon: '🎯', label: 'Placar exato', pts: 'odd × aposta', sub: 'Mais difícil, mais pontos', c: 'text-yellow-400', bg: 'bg-yellow-500/10' },
-        { icon: '✅', label: 'Resultado certo', pts: '1.3× aposta', sub: 'Só o vencedor/empate', c: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-        { icon: '⚽', label: 'Artilheiro certo', pts: '+0.5 pts', sub: 'Bônus por acerto', c: 'text-blue-400', bg: 'bg-blue-500/10' },
-      ].map(r => (
-        <div key={r.label} className={`flex items-center gap-3 rounded-xl p-3 ${r.bg}`}>
-          <span className="text-2xl">{r.icon}</span>
-          <div className="flex-1">
-            <p className="text-white text-xs font-semibold">{r.label}</p>
-            <p className="text-gray-500 text-[10px]">{r.sub}</p>
-          </div>
-          <span className={`text-sm font-black ${r.c}`}>{r.pts}</span>
-        </div>
-      ))}
-      <p className="text-center text-gray-600 text-[10px]">Odds variam por jogo — quanto maior o favorito, menor a odd</p>
-    </div>
-  )
-}
+function Tooltip({ rect, title, desc, action, onNext, onBack, stepN, totalN }) {
+  const isAbove = rect ? rect.top > window.innerHeight / 2 : false
+  const centerX = rect ? (rect.left + rect.right) / 2 : window.innerWidth / 2
 
-function RankingMini() {
-  const rows = [
-    { pos: '🥇', name: 'Você 🏆', pts: '145.5', hi: true },
-    { pos: '🥈', name: 'João',    pts: '132.0' },
-    { pos: '🥉', name: 'Maria',   pts: '118.5' },
-    { pos: '4º', name: 'Pedro',   pts: '98.0'  },
-  ]
-  return (
-    <div className="bg-gray-900 rounded-2xl p-4 border border-gray-700 w-full max-w-[300px] mx-auto space-y-2">
-      <p className="text-[10px] text-gray-500 text-center mb-3 uppercase tracking-wider font-semibold">Ranking ao vivo</p>
-      {rows.map(r => (
-        <div key={r.name} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all ${r.hi ? 'bg-emerald-900/40 border border-emerald-600/40 shadow-lg shadow-emerald-900/20' : 'bg-gray-800/60'}`}>
-          <span className="text-sm w-6 text-center">{r.pos}</span>
-          <span className={`flex-1 text-xs font-semibold ${r.hi ? 'text-white' : 'text-gray-300'}`}>{r.name}</span>
-          <span className={`text-xs font-bold ${r.hi ? 'text-emerald-400' : 'text-gray-400'}`}>{r.pts} pts</span>
-        </div>
-      ))}
-    </div>
-  )
-}
+  const style = {
+    position: 'fixed',
+    zIndex: 201,
+    width: Math.min(320, window.innerWidth - 32),
+    left: Math.max(16, Math.min(centerX - 160, window.innerWidth - 336)),
+  }
+  if (isAbove) {
+    style.bottom = `calc(100vh - ${rect ? rect.top - 12 : window.innerHeight / 2}px)`
+  } else {
+    style.top = rect ? rect.bottom + 12 : window.innerHeight / 2 + 80
+  }
 
-function FieldMini() {
   return (
-    <div className="rounded-2xl overflow-hidden w-full max-w-[260px] mx-auto border border-white/10" style={{ background: 'linear-gradient(180deg, #14532d 0%, #15803d 35%, #16a34a 50%, #15803d 65%, #14532d 100%)' }}>
-      <div className="relative py-5 px-3 space-y-3">
-        <div className="absolute top-1/2 left-4 right-4 h-px bg-white/10 pointer-events-none" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 rounded-full border border-white/10 pointer-events-none" />
-        {[
-          { players: [{ n: 'Vini Jr', pos: 'ATA', c: 'red' }, { n: 'Mbappé', pos: 'ATA', c: 'red' }] },
-          { players: [{ n: 'Pedri', pos: 'MEI', c: 'emerald' }, { n: 'Bell.', pos: 'MEI', c: 'emerald' }, { n: 'De B.', pos: 'MEI', c: 'emerald' }] },
-          { players: [{ n: 'T.Silva', pos: 'DEF', c: 'blue' }, { n: 'Militão', pos: 'DEF', c: 'blue' }, { n: 'R.Dias', pos: 'DEF', c: 'blue' }] },
-          { players: [{ n: 'Alisson', pos: 'GOL', c: 'yellow', captain: true }] },
-        ].map((row, ri) => (
-          <div key={ri} className="flex justify-center gap-3">
-            {row.players.map(p => (
-              <div key={p.n} className="flex flex-col items-center gap-1">
-                <div className={`w-10 h-10 rounded-full bg-${p.c}-500/20 border-2 border-${p.c}-500/60 flex items-center justify-center relative`}>
-                  <span className={`text-[9px] font-bold text-${p.c}-300`}>{p.pos}</span>
-                  {p.captain && (
-                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center shadow-md">
-                      <span className="text-[7px] text-white font-black">C</span>
-                    </div>
-                  )}
-                </div>
-                <span className="text-[9px] text-white/80 font-medium">{p.n}</span>
-              </div>
+    <div style={style}>
+      {/* Seta apontando para o elemento */}
+      {rect && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          order: isAbove ? 1 : -1,
+          marginBottom: isAbove ? 0 : -1,
+          marginTop: isAbove ? -1 : 0,
+        }}>
+          <div style={{
+            width: 0, height: 0,
+            borderLeft: '8px solid transparent',
+            borderRight: '8px solid transparent',
+            ...(isAbove
+              ? { borderTop: '9px solid #1f2937' }
+              : { borderBottom: '9px solid #1f2937' }),
+          }} />
+        </div>
+      )}
+
+      <div style={{
+        background: '#111827',
+        border: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: 18,
+        padding: 20,
+        boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
+      }}>
+        {/* Progresso */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <span style={{ fontSize: 10, color: '#6b7280', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+            Passo {stepN} de {totalN}
+          </span>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {Array.from({ length: totalN }).map((_, i) => (
+              <div key={i} style={{
+                borderRadius: 9999, transition: 'all 0.3s',
+                width: i === stepN - 1 ? 18 : 6, height: 6,
+                background: i < stepN ? '#34d399' : '#374151',
+              }} />
             ))}
           </div>
-        ))}
-      </div>
-      <div className="bg-black/20 px-3 py-2 flex justify-between items-center">
-        <span className="text-[10px] text-white/60">Orçamento</span>
-        <span className="text-[10px] text-emerald-400 font-bold">C$ 100 disponível</span>
+        </div>
+
+        <p style={{ color: '#fff', fontWeight: 800, fontSize: 15, marginBottom: 6 }}>{title}</p>
+        <p style={{ color: '#9ca3af', fontSize: 13, lineHeight: 1.6, marginBottom: 16 }}>{desc}</p>
+
+        {/* CTA */}
+        {action === 'click' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.3)', borderRadius: 12, padding: '10px 14px' }}>
+            <div style={{ width: 8, height: 8, borderRadius: 9999, background: '#34d399', animation: 'pulse 1.5s infinite' }} />
+            <MousePointer style={{ width: 14, height: 14, color: '#34d399' }} />
+            <span style={{ color: '#34d399', fontSize: 12, fontWeight: 700 }}>Clique no item destacado para continuar</span>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 10 }}>
+            {onBack && (
+              <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '10px 14px', background: 'transparent', border: '1px solid #374151', borderRadius: 12, color: '#9ca3af', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                <ChevronLeft style={{ width: 14, height: 14 }} /> Voltar
+              </button>
+            )}
+            <button onClick={onNext} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 16px', background: '#059669', border: 'none', borderRadius: 12, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              Entendi, próximo! <ChevronRight style={{ width: 14, height: 14 }} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function CartolaScoreMini() {
+// ── Pop-ups (boas-vindas, cartola e final) ────────────────────────────
+
+function PopupCard({ children }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 210, background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ width: '100%', maxWidth: 360, background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 28, padding: 28, boxShadow: '0 40px 80px rgba(0,0,0,0.6)' }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function WelcomePopup({ onNext }) {
+  return (
+    <PopupCard>
+      <div style={{ textAlign: 'center', marginBottom: 24 }}>
+        <div style={{ width: 76, height: 76, background: 'linear-gradient(135deg,#059669,#047857)', borderRadius: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', boxShadow: '0 12px 30px rgba(5,150,105,0.35)' }}>
+          <Trophy style={{ width: 38, height: 38, color: '#fff' }} />
+        </div>
+        <h2 style={{ color: '#fff', fontWeight: 900, fontSize: 24, margin: '0 0 8px' }}>Bem-vindo ao Bolão! 🏆</h2>
+        <p style={{ color: '#9ca3af', fontSize: 14, lineHeight: 1.7, margin: 0 }}>
+          Vamos te guiar pelas telas do app para você conhecer tudo antes da Copa começar.
+        </p>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 24, fontSize: 22 }}>
+        {['🇧🇷','🇦🇷','🇫🇷','🏴󠁧󠁢󠁥󠁮󠁧󠁿','🇩🇪','🇵🇹','🇪🇸'].map(f => <span key={f}>{f}</span>)}
+      </div>
+      <button onClick={onNext} style={{ width: '100%', padding: '14px 0', background: '#059669', border: 'none', borderRadius: 16, color: '#fff', fontWeight: 800, fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        Começar o tour <ChevronRight style={{ width: 18, height: 18 }} />
+      </button>
+    </PopupCard>
+  )
+}
+
+function CartolaScoringPopup({ onNext, onBack }) {
   const rows = [
-    { ev: '⚽ Gol (ATA/MEI)',      pts: '+8',  c: 'text-emerald-400' },
-    { ev: '⚽ Gol (DEF)',           pts: '+12', c: 'text-blue-400'    },
-    { ev: '⚽ Gol (GOL)',           pts: '+15', c: 'text-yellow-400'  },
-    { ev: '🎯 Assistência',         pts: '+5',  c: 'text-emerald-400' },
-    { ev: '🧤 Clean Sheet (GOL)',    pts: '+5',  c: 'text-emerald-400' },
-    { ev: '🛡️ Clean Sheet (DEF)',    pts: '+3',  c: 'text-blue-400'   },
-    { ev: '🟨 Cartão Amarelo',       pts: '−2',  c: 'text-yellow-500' },
-    { ev: '🟥 Cartão Vermelho',      pts: '−5',  c: 'text-red-500'    },
-    { ev: '© Capitão',              pts: '×2',  c: 'text-orange-400' },
+    ['⚽ Gol (Atacante/Meia)', '+8 pts',  '#34d399'],
+    ['⚽ Gol (Defensor)',      '+12 pts', '#60a5fa'],
+    ['⚽ Gol (Goleiro)',       '+15 pts', '#fbbf24'],
+    ['🎯 Assistência',         '+5 pts',  '#34d399'],
+    ['🧤 Clean Sheet (GOL)',    '+5 pts',  '#34d399'],
+    ['🛡️ Clean Sheet (DEF)',    '+3 pts',  '#60a5fa'],
+    ['🟨 Cartão Amarelo',       '−2 pts',  '#f59e0b'],
+    ['🟥 Cartão Vermelho',      '−5 pts',  '#f87171'],
+    ['© Capitão',              '× 2',     '#fb923c'],
   ]
   return (
-    <div className="bg-gray-900 rounded-2xl p-4 border border-gray-700 w-full max-w-[300px] mx-auto">
-      <p className="text-[10px] text-gray-500 text-center mb-3 uppercase tracking-wider font-semibold">Tabela de pontuação</p>
-      <div className="space-y-2">
-        {rows.map(r => (
-          <div key={r.ev} className="flex items-center justify-between gap-2">
-            <span className="text-gray-300 text-[11px]">{r.ev}</span>
-            <span className={`text-sm font-black tabular-nums ${r.c}`}>{r.pts}</span>
+    <PopupCard>
+      <div style={{ textAlign: 'center', marginBottom: 20 }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>⚽</div>
+        <h2 style={{ color: '#fff', fontWeight: 900, fontSize: 20, margin: '0 0 6px' }}>Pontuação do Cartola</h2>
+        <p style={{ color: '#9ca3af', fontSize: 13, margin: 0 }}>Seus jogadores pontuam de verdade!</p>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+        {rows.map(([ev, pts, c]) => (
+          <div key={ev} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#d1d5db', fontSize: 13 }}>{ev}</span>
+            <span style={{ color: c, fontWeight: 800, fontSize: 15 }}>{pts}</span>
           </div>
         ))}
       </div>
-    </div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '12px 16px', background: 'transparent', border: '1px solid #374151', borderRadius: 14, color: '#9ca3af', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          <ChevronLeft style={{ width: 14, height: 14 }} /> Voltar
+        </button>
+        <button onClick={onNext} style={{ flex: 1, padding: '12px 0', background: '#059669', border: 'none', borderRadius: 14, color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          Próximo <ChevronRight style={{ width: 14, height: 14 }} />
+        </button>
+      </div>
+    </PopupCard>
   )
 }
 
-// ── Seta apontando para a barra de navegação ────────────────────────
-
-function NavArrow({ tab, icon: Icon, label }) {
+function DonePopup({ onDone }) {
   return (
-    <div className="flex flex-col items-center gap-1 mt-1">
-      {/* Linha + seta animada */}
-      <div className="flex flex-col items-center gap-0.5 animate-bounce">
-        <div className="w-0.5 h-6 bg-gradient-to-b from-transparent to-emerald-400" />
-        <svg width="14" height="8" viewBox="0 0 14 8" fill="none">
-          <path d="M7 8L0 0h14L7 8z" fill="#34d399" />
-        </svg>
+    <PopupCard>
+      <div style={{ textAlign: 'center', marginBottom: 24 }}>
+        <div style={{ fontSize: 64, marginBottom: 12 }}>🎉</div>
+        <h2 style={{ color: '#fff', fontWeight: 900, fontSize: 24, margin: '0 0 8px' }}>Tudo pronto!</h2>
+        <p style={{ color: '#9ca3af', fontSize: 14, lineHeight: 1.7, margin: '0 0 12px' }}>
+          Agora você conhece o app! Faça seus palpites antes de cada jogo e monte seu Cartola antes das rodadas.
+        </p>
+        <p style={{ color: '#34d399', fontWeight: 700, fontSize: 14, margin: 0 }}>🏆 Copa começa em 11 de junho!</p>
       </div>
-      {/* Mini nav tab mock */}
-      <div className="flex items-center gap-1.5 bg-emerald-600 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg shadow-emerald-900/50">
-        <Icon className="w-3.5 h-3.5" />
-        {label}
-      </div>
-      <p className="text-gray-500 text-[10px] mt-1">Toque aqui na barra de navegação</p>
-    </div>
+      <button onClick={onDone} style={{ width: '100%', padding: '14px 0', background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', borderRadius: 16, color: '#fff', fontWeight: 800, fontSize: 15, cursor: 'pointer', boxShadow: '0 8px 20px rgba(5,150,105,0.35)' }}>
+        Começar a jogar 🚀
+      </button>
+    </PopupCard>
   )
 }
 
-// ── Definição dos passos ────────────────────────────────────────────
+// ── Configuração dos passos ──────────────────────────────────────────
 
+// type: 'popup-welcome' | 'popup-cartola' | 'popup-done'
+//       'spotlight-click' (clique forçado na aba)
+//       'spotlight-info'  (mostra a tela, avança com botão)
 const STEPS = [
+  { type: 'popup-welcome' },
+
   {
-    id: 'welcome',
-    visual: () => (
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-20 h-20 bg-emerald-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-emerald-900/50 ring-4 ring-emerald-500/20">
-          <Trophy className="w-10 h-10 text-white" />
-        </div>
-        <div className="flex gap-2">
-          {['🇧🇷', '🇦🇷', '🇫🇷', '🏴󠁧󠁢󠁥󠁮󠁧󠁿', '🇩🇪', '🇵🇹'].map(f => (
-            <span key={f} className="text-xl">{f}</span>
-          ))}
-        </div>
-      </div>
-    ),
-    title: 'Bem-vindo ao Bolão! 🏆',
-    description: 'Faça palpites nos jogos, monte seu time no Cartola e dispute o ranking com os amigos. Vamos te mostrar tudo em menos de 2 minutos!',
-    arrow: null,
+    type: 'spotlight-click',
+    selector: 'a[href="/jogos"]',
+    navigateTo: '/jogos',
+    title: '📅 Aba Jogos',
+    desc: 'Todos os 72 jogos da Copa ficam aqui. Clique para conhecer a página!',
   },
   {
-    id: 'jogos',
-    visual: () => <MatchMini />,
-    title: 'Encontre os Jogos',
-    description: 'Na aba Jogos você vê todos os 72 jogos da Copa. Toque em qualquer partida antes do apito para fazer seu palpite.',
-    arrow: <NavArrow tab="jogos" icon={Calendar} label="Jogos" />,
+    type: 'spotlight-info',
+    selector: 'main',
+    title: '📋 Lista de Jogos',
+    desc: 'Essa é a lista com todos os jogos! Antes de cada partida você pode apostar no placar, resultado e artilheiros. Os palpites fecham no apito inicial.',
+    showBack: false,
+  },
+
+  {
+    type: 'spotlight-click',
+    selector: 'a[href="/ranking"]',
+    navigateTo: '/ranking',
+    title: '🏆 Aba Ranking',
+    desc: 'Veja onde você está no ranking! Os pontos atualizam automaticamente após cada jogo. Clique para ver!',
   },
   {
-    id: 'palpite',
-    visual: () => <BetMini />,
-    title: 'Como Apostar',
-    description: 'Cada palpite tem 3 partes: o placar exato que você acha que vai sair, o resultado (vitória/empate) e o artilheiro para pontos bônus.',
-    arrow: null,
+    type: 'spotlight-info',
+    selector: 'main',
+    title: '📊 Ranking ao Vivo',
+    desc: 'Aqui aparece todo mundo do bolão em tempo real. Quanto mais palpites certos, mais você sobe no ranking.',
+    showBack: true,
+  },
+
+  {
+    type: 'spotlight-click',
+    selector: 'a[href="/cartola"]',
+    navigateTo: '/cartola',
+    title: '👕 Aba Cartola',
+    desc: 'Monte um time de 11 jogadores com C$100 de orçamento. Eles pontuam de verdade nos jogos da Copa! Clique para ver!',
   },
   {
-    id: 'regras',
-    visual: () => <ScoringMini />,
-    title: 'Como Ganhar Pontos',
-    description: 'Placar exato dá mais pontos e usa as odds do jogo. Acertar só o resultado dá 1.3× os pontos apostados. Artilheiro é sempre bônus.',
-    arrow: null,
+    type: 'spotlight-info',
+    selector: 'main',
+    title: '⚽ Cartola da Copa',
+    desc: 'Escolha jogadores de qualquer seleção dentro do orçamento de C$100. Defina seu capitão — ele pontua em dobro! Cada rodada tem uma data limite.',
+    showBack: true,
   },
-  {
-    id: 'ranking',
-    visual: () => <RankingMini />,
-    title: 'Ranking em Tempo Real',
-    description: 'Após cada jogo seus pontos atualizam automaticamente. Acompanhe sua posição e dos amigos na aba Ranking.',
-    arrow: <NavArrow tab="ranking" icon={BarChart2} label="Ranking" />,
-  },
-  {
-    id: 'cartola',
-    visual: () => <FieldMini />,
-    title: 'Cartola da Copa ⚽',
-    description: 'Monte um time de 11 jogadores com C$100 de orçamento. Misture jogadores de qualquer seleção e defina seu capitão — ele pontua em dobro!',
-    arrow: <NavArrow tab="cartola" icon={Shirt} label="Cartola" />,
-  },
-  {
-    id: 'cartola-score',
-    visual: () => <CartolaScoreMini />,
-    title: 'Pontuação do Cartola',
-    description: 'Seus jogadores pontuam de verdade com o que acontece nos jogos. Gols, assistências, clean sheet e cartões — tudo conta!',
-    arrow: null,
-  },
-  {
-    id: 'done',
-    visual: () => (
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-20 h-20 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-3xl flex items-center justify-center shadow-2xl shadow-emerald-900/60 ring-4 ring-emerald-500/20">
-          <span className="text-4xl">🎉</span>
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <p className="text-white font-bold text-base">Tudo pronto!</p>
-          <p className="text-gray-400 text-sm text-center">O bolão começa em 11 de junho</p>
-        </div>
-      </div>
-    ),
-    title: 'Boa sorte! 🌟',
-    description: 'Faça seus palpites antes de cada jogo e monte seu Cartola. Que o melhor vença — e que seja você!',
-    arrow: null,
-    isLast: true,
-  },
+
+  { type: 'popup-cartola' },
+  { type: 'popup-done' },
 ]
 
-// ── Componente principal ────────────────────────────────────────────
+// total de "passos visuais" para a barra de progresso (excluindo welcome e done)
+const VISUAL_STEPS = STEPS.length
+
+// ── Componente principal ─────────────────────────────────────────────
 
 export default function Tutorial() {
   const [step, setStep]       = useState(0)
   const [visible, setVisible] = useState(false)
-  const [dir, setDir]         = useState(1) // 1 = avança, -1 = volta
+  const navigate              = useNavigate()
 
   useEffect(() => {
     if (!localStorage.getItem(TUTORIAL_KEY)) {
-      // Pequeno delay para a página carregar antes de mostrar
-      const t = setTimeout(() => setVisible(true), 600)
+      const t = setTimeout(() => setVisible(true), 700)
       return () => clearTimeout(t)
     }
   }, [])
 
+  const current = STEPS[step]
+  const selector = current?.selector ?? null
+  const rect     = useSpotlightRect(selector)
+
+  const advance = useCallback(() => {
+    if (step < STEPS.length - 1) setStep(s => s + 1)
+  }, [step])
+
+  const goBack = useCallback(() => {
+    if (step > 0) setStep(s => s - 1)
+  }, [step])
+
+  const finish = useCallback(() => {
+    localStorage.setItem(TUTORIAL_KEY, '1')
+    setVisible(false)
+  }, [])
+
+  const handleSpotlightClick = useCallback(() => {
+    if (current?.type === 'spotlight-click' && current.navigateTo) {
+      navigate(current.navigateTo)
+      setStep(s => s + 1)
+    }
+  }, [current, navigate])
+
   if (!visible) return null
 
-  const current = STEPS[step]
-  const isFirst = step === 0
-  const isLast  = step === STEPS.length - 1
-
-  function advance() {
-    if (isLast) {
-      localStorage.setItem(TUTORIAL_KEY, '1')
-      setVisible(false)
-      return
-    }
-    setDir(1)
-    setStep(s => s + 1)
+  // ── Pop-ups ──────────────────────────────────────────────────────
+  if (current.type === 'popup-welcome') {
+    return <WelcomePopup onNext={advance} />
+  }
+  if (current.type === 'popup-cartola') {
+    return <CartolaScoringPopup onNext={advance} onBack={goBack} />
+  }
+  if (current.type === 'popup-done') {
+    return <DonePopup onDone={finish} />
   }
 
-  function back() {
-    if (isFirst) return
-    setDir(-1)
-    setStep(s => s - 1)
-  }
-
-  const Visual = current.visual
+  // ── Spotlight steps ───────────────────────────────────────────────
+  const isClickStep = current.type === 'spotlight-click'
+  const showBack    = current.showBack ?? false
 
   return (
-    /* Overlay — pointer-events bloqueiam cliques fora */
-    <div className="fixed inset-0 z-[200] bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-4">
+    <>
+      <SpotlightOverlay
+        rect={isClickStep ? rect : null}
+        opacity={isClickStep ? 0.82 : 0.55}
+        onBlockedClick={() => {}} // bloqueia cliques fora
+      />
 
-      {/* Card */}
-      <div className="w-full max-w-sm bg-gray-900 border border-gray-700/80 rounded-3xl shadow-2xl overflow-hidden">
+      {/* Interceptor de clique no elemento destacado */}
+      {isClickStep && rect && (
+        <div
+          onClick={handleSpotlightClick}
+          style={{
+            position: 'fixed',
+            top: rect.top, left: rect.left,
+            width: rect.width, height: rect.height,
+            zIndex: 201, cursor: 'pointer',
+            borderRadius: 14,
+          }}
+        />
+      )}
 
-        {/* Barra de progresso */}
-        <div className="h-1 bg-gray-800">
-          <div
-            className="h-full bg-emerald-500 transition-all duration-500 ease-out"
-            style={{ width: `${((step + 1) / STEPS.length) * 100}%` }}
-          />
-        </div>
-
-        <div className="p-5 space-y-4">
-          {/* Dots de progresso */}
-          <div className="flex justify-center gap-1.5">
-            {STEPS.map((_, i) => (
-              <div
-                key={i}
-                className={`rounded-full transition-all duration-300 ${
-                  i === step
-                    ? 'w-5 h-1.5 bg-emerald-400'
-                    : i < step
-                    ? 'w-1.5 h-1.5 bg-emerald-700'
-                    : 'w-1.5 h-1.5 bg-gray-700'
-                }`}
-              />
-            ))}
-          </div>
-
-          {/* Visual */}
-          <div className="min-h-[160px] flex items-center justify-center">
-            <Visual />
-          </div>
-
-          {/* Texto */}
-          <div className="text-center space-y-1.5">
-            <h2 className="text-white font-black text-xl leading-tight">{current.title}</h2>
-            <p className="text-gray-400 text-sm leading-relaxed">{current.description}</p>
-          </div>
-
-          {/* Seta de navegação (quando aplicável) */}
-          {current.arrow && (
-            <div className="flex justify-center">
-              {current.arrow}
-            </div>
-          )}
-
-          {/* Botões */}
-          <div className="flex items-center gap-3 pt-1">
-            {!isFirst && (
-              <button
-                onClick={back}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-gray-400 hover:text-white hover:bg-gray-800 transition-colors text-sm font-medium"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Voltar
-              </button>
-            )}
-
-            <button
-              onClick={advance}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all ${
-                isLast
-                  ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-900/50'
-                  : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-              }`}
-            >
-              {isLast ? (
-                <>Começar a jogar 🚀</>
-              ) : (
-                <>
-                  Próximo
-                  <ChevronRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* Step counter */}
-          <p className="text-center text-gray-600 text-[11px]">
-            Passo {step + 1} de {STEPS.length}
-          </p>
-        </div>
-      </div>
-    </div>
+      <Tooltip
+        rect={isClickStep ? rect : null}
+        title={current.title}
+        desc={current.desc}
+        action={isClickStep ? 'click' : 'next'}
+        onNext={advance}
+        onBack={showBack ? goBack : null}
+        stepN={step}
+        totalN={VISUAL_STEPS}
+      />
+    </>
   )
 }
