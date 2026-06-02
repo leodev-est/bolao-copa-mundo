@@ -205,6 +205,71 @@ async function recalcTeamTotals(roundId) {
   console.log(`  ↳ totais de ${teams?.length ?? 0} times atualizados`)
 }
 
+// ── Ajuste dinâmico de preços pós-rodada ────────────────────────────────────────
+// Cada ponto conquistado na Copa = +0.15 no preço (acumulado)
+// Bônus máximo: +5  |  Penalidade máxima: -3  |  Mínimo absoluto: C$2
+
+const TEAM_TIERS_PRICE = {
+  elite: new Set(['Argentina','Brazil','England','France','Germany','Netherlands','Portugal','Spain']),
+  forte: new Set(['Austria','Belgium','Colombia','Croatia','Ecuador','Japan','Mexico','Morocco','Norway','Scotland','Senegal','South Korea','Switzerland','United States','Uruguay']),
+  medio: new Set(['Algeria','Australia','Bosnia-Herzegovina','Canada','Czechia','Egypt','Ghana','Iran','Ivory Coast','Paraguay','South Africa','Sweden','Tunisia','Turkey']),
+}
+const BASE_PRICES_TIER = {
+  elite: { GK:11, DEF:9,   MID:10, FWD:13  },
+  forte: { GK:8,  DEF:7,   MID:8,  FWD:10  },
+  medio: { GK:6,  DEF:5,   MID:6,  FWD:8   },
+  fraco: { GK:4,  DEF:3.5, MID:4,  FWD:5.5 },
+}
+
+function tierOf(team)      { return TEAM_TIERS_PRICE.elite.has(team) ? 'elite' : TEAM_TIERS_PRICE.forte.has(team) ? 'forte' : TEAM_TIERS_PRICE.medio.has(team) ? 'medio' : 'fraco' }
+function basePriceOf(team, pos) { const t = tierOf(team); return BASE_PRICES_TIER[t][pos] ?? BASE_PRICES_TIER[t].MID }
+function clamp(v,mn,mx)    { return Math.max(mn, Math.min(mx, v)) }
+function roundHalf(v)      { return Math.round(v * 2) / 2 }
+
+async function updatePlayerPrices() {
+  console.log('\n💰 Ajustando preços por performance na Copa...')
+
+  // Pontuação total acumulada de cada jogador em todas as rodadas
+  const { data: scores } = await supabase
+    .from('cartola_player_scores')
+    .select('player_id, total_points')
+
+  const ptsByPlayer = {}
+  const matchesByPlayer = {}
+  for (const s of scores ?? []) {
+    ptsByPlayer[s.player_id]     = (ptsByPlayer[s.player_id]     ?? 0) + s.total_points
+    matchesByPlayer[s.player_id] = (matchesByPlayer[s.player_id] ?? 0) + 1
+  }
+
+  const { data: players } = await supabase
+    .from('cartola_players')
+    .select('id, team_name, position, price')
+
+  let changed = 0
+  for (const p of players ?? []) {
+    const totalPts  = ptsByPlayer[p.id]     ?? 0
+    const matches   = matchesByPlayer[p.id] ?? 0
+    const avgPts    = matches > 0 ? totalPts / matches : 0
+    const base      = basePriceOf(p.team_name, p.position)
+    const adjustment = clamp(totalPts * 0.15, -3, 5)
+    const newPrice  = roundHalf(Math.max(2, base + adjustment))
+    const newAvg    = roundHalf(avgPts)
+
+    // Só atualiza se o valor realmente mudou
+    if (newPrice === p.price) continue
+
+    if (!DRY_RUN) {
+      await supabase
+        .from('cartola_players')
+        .update({ price: newPrice, avg_points: newAvg })
+        .eq('id', p.id)
+    }
+    changed++
+  }
+
+  console.log(`  ↳ ${changed} jogadores com preço atualizado${DRY_RUN ? ' (dry run)' : ''}`)
+}
+
 // ── Verifica se a rodada encerrou ───────────────────────────────────────────────
 async function checkRoundCompletion(round) {
   const { data: unfinished } = await supabase
@@ -270,6 +335,9 @@ async function main() {
     await checkRoundCompletion(round)
     console.log()
   }
+
+  // Ajusta preços de todos os jogadores com base na performance acumulada na Copa
+  await updatePlayerPrices()
 
   console.log('✅ Concluído.')
 }
