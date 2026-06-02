@@ -138,9 +138,7 @@ export default function PlayerPickerModal({
               {filtered.map(player => {
                 const disabledReason = isDisabled(player)
                 const initials = player.name.split(' ').map(n => n[0]).slice(0, 2).join('')
-                const imgUrl   = player.api_player_id
-                  ? `https://images.fotmob.com/image_resources/playerimages/${player.api_player_id}.png`
-                  : null
+                const imgUrl   = player.photo_url || player.team_flag || null
                 const posColor = POSITION_COLORS[player.position] ?? ''
 
                 return (
@@ -159,11 +157,11 @@ export default function PlayerPickerModal({
                           <img
                             src={imgUrl}
                             alt={player.name}
-                            className="w-full h-full object-cover"
+                            className={`${player.photo_url ? 'w-full h-full object-cover' : 'w-6 h-6 object-contain'}`}
                             onError={e => { e.currentTarget.style.display='none'; e.currentTarget.nextSibling.style.display='flex' }}
                           />
                         ) : null}
-                        <span className={imgUrl ? 'hidden' : 'flex'}>{initials}</span>
+                        <span style={{ display: imgUrl ? 'none' : 'flex' }}>{initials}</span>
                       </div>
 
                       {/* Info */}

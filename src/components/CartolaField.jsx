@@ -33,9 +33,7 @@ function PlayerSlot({ slot, player, isCaptain, isLocked, scores, onSlotClick }) 
   }
 
   const initials = player.name.split(' ').map(n => n[0]).slice(0, 2).join('')
-  const imgUrl   = player.api_player_id
-    ? `https://images.fotmob.com/image_resources/playerimages/${player.api_player_id}.png`
-    : null
+  const imgUrl   = player.photo_url || player.team_flag || null
 
   return (
     <button
@@ -55,11 +53,11 @@ function PlayerSlot({ slot, player, isCaptain, isLocked, scores, onSlotClick }) 
             <img
               src={imgUrl}
               alt={player.name}
-              className="w-full h-full object-cover"
+              className={`${player.photo_url ? 'w-full h-full object-cover' : 'w-8 h-8 object-contain'}`}
               onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
             />
           ) : null}
-          <span className={imgUrl ? 'hidden' : 'flex'}>{initials}</span>
+          <span style={{ display: imgUrl ? 'none' : 'flex' }}>{initials}</span>
         </div>
 
         {/* Badge capitão */}
