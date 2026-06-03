@@ -62,8 +62,8 @@ export default function PlayerPickerModal({
       {/* Overlay */}
       <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      {/* Sheet — sobe da base no mobile, modal grande centralizado no desktop */}
-      <div className="fixed z-50 bottom-0 inset-x-0 md:inset-x-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-[780px] md:max-h-[90vh] bg-gray-900 md:rounded-2xl rounded-t-2xl flex flex-col max-h-[92vh] shadow-2xl border border-gray-700/50">
+      {/* Tela cheia com margem mínima */}
+      <div className="fixed z-50 inset-0 md:inset-3 bg-gray-900 md:rounded-2xl flex flex-col shadow-2xl border border-gray-700/50">
 
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-800">
@@ -143,7 +143,7 @@ export default function PlayerPickerModal({
           ) : filtered.length === 0 ? (
             <p className="text-center text-gray-500 py-12 text-sm">Nenhum jogador encontrado</p>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 divide-y divide-gray-800/40 lg:divide-y-0 lg:gap-0">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 divide-y divide-gray-800/40 lg:divide-y-0 lg:gap-0">
               {filtered.map((player, idx) => {
                 const disabledReason = isDisabled(player)
                 const initials = player.name.split(' ').map(n => n[0]).slice(0, 2).join('')
