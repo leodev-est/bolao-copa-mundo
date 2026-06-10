@@ -8,6 +8,8 @@ import {
 } from '../hooks/useCartola'
 import CartolaField from '../components/CartolaField'
 import PlayerPickerModal from '../components/PlayerPickerModal'
+import ShareButton from '../components/ShareButton'
+import { CartolaFieldSkeleton } from '../components/Skeleton'
 
 // Menu de ações ao clicar num slot preenchido
 function SlotActionMenu({ slot, isCaptain, onSetCaptain, onRemove, onClose }) {
@@ -156,8 +158,17 @@ export default function Cartola() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      <div className="max-w-lg mx-auto space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="space-y-1.5">
+            <div className="h-7 w-28 bg-gray-800 rounded-xl animate-pulse" />
+            <div className="h-3 w-40 bg-gray-800 rounded-full animate-pulse" />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {[0,1,2].map(i => <div key={i} className="h-16 bg-gray-900 rounded-xl animate-pulse border border-gray-800" />)}
+        </div>
+        <CartolaFieldSkeleton />
       </div>
     )
   }
@@ -310,6 +321,13 @@ export default function Cartola() {
           <p className="text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-1">Pontuação da rodada</p>
           <p className="text-4xl font-black text-white">{myTeam.total_points.toFixed(1)}</p>
           <p className="text-gray-500 text-xs mt-1">pontos</p>
+          <div className="mt-3 flex justify-center">
+            <ShareButton
+              title="Meu Cartola · Bolão da Gangue"
+              text={`Fiz ${myTeam.total_points.toFixed(1)} pontos no Cartola da Copa! Formação ${formation}. Bolão da Gangue 🤙`}
+              className="text-gray-500 hover:text-emerald-400"
+            />
+          </div>
         </div>
       )}
 

@@ -1,4 +1,5 @@
-import { RefreshCw, Wifi } from 'lucide-react'
+import { RefreshCw, Wifi, ClipboardList } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useLeaderboard } from '../hooks/useLeaderboard'
 import LeaderboardTable from '../components/LeaderboardTable'
 import { useAuth } from '../hooks/useAuth'
@@ -32,6 +33,16 @@ export default function Ranking() {
           <RefreshCw className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Link histórico */}
+      <Link
+        to="/historico"
+        className="flex items-center gap-2 px-4 py-2.5 bg-gray-900 border border-gray-800 rounded-xl mb-4 hover:border-gray-700 transition-colors group"
+      >
+        <ClipboardList className="w-4 h-4 text-gray-500 group-hover:text-emerald-400 transition-colors" />
+        <span className="text-sm text-gray-400 group-hover:text-white transition-colors">Meu histórico de palpites</span>
+        <span className="ml-auto text-gray-600 text-xs group-hover:text-emerald-400 transition-colors">→</span>
+      </Link>
 
       {/* Minha posição (destaque) */}
       {myRank && (

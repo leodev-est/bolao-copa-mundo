@@ -84,6 +84,24 @@ export function useMatch(matchId) {
     staleTime: 1000 * 60,
   })
 
+  // Realtime: atualiza placar ao vivo da partida específica
+  useEffect(() => {
+    if (!matchId) return
+    const matchChannel = supabase
+      .channel(`match-row-${matchId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'matches',
+        filter: `id=eq.${matchId}`,
+      }, () => {
+        queryClient.invalidateQueries({ queryKey: ['match', matchId] })
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(matchChannel) }
+  }, [matchId, queryClient])
+
   // Realtime: atualiza opções quando resultado é definido
   useEffect(() => {
     if (!matchId) return

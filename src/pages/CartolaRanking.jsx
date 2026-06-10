@@ -9,6 +9,8 @@ import {
   buildFieldRows,
 } from '../hooks/useCartola'
 import { useAuth } from '../hooks/useAuth'
+import CartolaComparacao from '../components/CartolaComparacao'
+import { LeaderboardSkeleton } from '../components/Skeleton'
 
 const POSITION_COLORS = {
   GK:  'text-yellow-400 bg-yellow-500/10',
@@ -190,12 +192,15 @@ export default function CartolaRanking() {
         </div>
       )}
 
+      {/* Comparação com o líder (apenas modo rodada) */}
+      {selectedRound && leaderboard.length > 1 && (
+        <CartolaComparacao leaderboard={leaderboard} roundId={selectedRound} />
+      )}
+
       {/* Tabela */}
       <div className="space-y-2">
         {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-          </div>
+          <LeaderboardSkeleton rows={5} />
         ) : leaderboard.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-3xl mb-3">⚽</p>

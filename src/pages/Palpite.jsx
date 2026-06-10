@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
-import { ArrowLeft, CheckCircle2, AlertTriangle, Minus, Plus, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, AlertTriangle, Minus, Plus, ChevronDown, ChevronUp, TrendingUp, TrendingDown } from 'lucide-react'
 import { useMatch } from '../hooks/useMatches'
 import { useMainBet, useMatchBets, usePlaceMainBet, usePlaceBet } from '../hooks/useBets'
 import BetCard from '../components/BetCard'
+import ShareButton from '../components/ShareButton'
 import { BET_TYPE_ICONS, formatOdd, calcExactScoreOdd, deriveResult } from '../lib/odds'
 import { LIVE_STATUSES, FINISHED_STATUSES, STATUS_LABELS } from '../lib/api-football'
 
@@ -214,6 +215,52 @@ function ScorerSection({ scoreHome, scoreAway, homeName, awayName, homePlayers, 
   )
 }
 
+// ─── LiveBetFeedback ──────────────────────────────────────────────────────────
+
+function LiveBetFeedback({ match, mainBet }) {
+  if (!mainBet || match.score_home === null || match.score_home === undefined) return null
+  if (!LIVE_STATUSES.includes(match.status)) return null
+
+  const liveH  = match.score_home
+  const liveA  = match.score_away
+  const betH   = mainBet.score_home
+  const betA   = mainBet.score_away
+  const exact  = liveH === betH && liveA === betA
+  const liveRes = deriveResult(liveH, liveA)
+  const betRes  = deriveResult(betH, betA)
+  const resultOk = liveRes === betRes
+
+  if (exact) return (
+    <div className="flex items-center gap-2 p-3 bg-emerald-900/30 border border-emerald-600/40 rounded-xl mb-4">
+      <TrendingUp className="w-4 h-4 text-emerald-400 shrink-0" />
+      <div>
+        <p className="text-emerald-400 text-sm font-semibold">Palpite correto no momento!</p>
+        <p className="text-emerald-600 text-xs mt-0.5">Placar ao vivo bate com seu palpite ({betH}×{betA})</p>
+      </div>
+    </div>
+  )
+
+  if (resultOk) return (
+    <div className="flex items-center gap-2 p-3 bg-yellow-900/20 border border-yellow-700/30 rounded-xl mb-4">
+      <TrendingUp className="w-4 h-4 text-yellow-400 shrink-0" />
+      <div>
+        <p className="text-yellow-400 text-sm font-semibold">Resultado certo, placar diferente</p>
+        <p className="text-yellow-600 text-xs mt-0.5">Ao vivo {liveH}×{liveA} · Seu palpite {betH}×{betA}</p>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="flex items-center gap-2 p-3 bg-red-900/20 border border-red-700/30 rounded-xl mb-4">
+      <TrendingDown className="w-4 h-4 text-red-400 shrink-0" />
+      <div>
+        <p className="text-red-400 text-sm font-semibold">Perdendo no momento</p>
+        <p className="text-red-600 text-xs mt-0.5">Ao vivo {liveH}×{liveA} · Seu palpite {betH}×{betA}</p>
+      </div>
+    </div>
+  )
+}
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 const EXTRA_TYPES = ['total_goals', 'total_yellows']
@@ -346,10 +393,19 @@ export default function Palpite() {
         </div>
       </div>
 
-      {matchStarted && (
+      {/* Feedback ao vivo */}
+      <LiveBetFeedback match={match} mainBet={mainBet} />
+
+      {matchStarted && !LIVE_STATUSES.includes(match.status) && (
         <div className="flex items-center gap-3 p-4 bg-yellow-900/20 border border-yellow-700/30 rounded-xl mb-6">
           <AlertTriangle className="w-5 h-5 text-yellow-500 shrink-0" />
           <p className="text-yellow-400 text-sm font-semibold">Palpites encerrados — o jogo já iniciou.</p>
+        </div>
+      )}
+      {LIVE_STATUSES.includes(match.status) && (
+        <div className="flex items-center gap-3 p-4 bg-red-900/20 border border-red-700/30 rounded-xl mb-6">
+          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+          <p className="text-red-400 text-sm font-semibold">Jogo ao vivo — palpites encerrados.</p>
         </div>
       )}
 
@@ -408,15 +464,22 @@ export default function Palpite() {
           </button>
         )}
 
-        {/* Resumo */}
+        {/* Resumo + compartilhar */}
         {mainBet && (
-          <div className="mt-3 p-3 bg-gray-800/50 rounded-lg text-center">
-            <p className="text-xs text-gray-500">
-              Palpite atual: <span className="text-white font-semibold">{mainBet.score_home} × {mainBet.score_away}</span>
-              {' · '}odd <span className="text-emerald-400">{formatOdd(mainBet.odd)}</span>
-              {mainBet.status === 'won' && <span className="text-emerald-400 ml-1">✓ +{mainBet.points_won?.toFixed(2)} pts</span>}
-              {mainBet.status === 'lost' && <span className="text-red-400 ml-1">✗ 0 pts</span>}
-            </p>
+          <div className="mt-3 p-3 bg-gray-800/50 rounded-lg">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-gray-500">
+                Palpite atual: <span className="text-white font-semibold">{mainBet.score_home} × {mainBet.score_away}</span>
+                {' · '}odd <span className="text-emerald-400">{formatOdd(mainBet.odd)}</span>
+                {mainBet.status === 'won' && <span className="text-emerald-400 ml-1">✓ +{mainBet.points_won?.toFixed(2)} pts</span>}
+                {mainBet.status === 'lost' && <span className="text-red-400 ml-1">✗ 0 pts</span>}
+              </p>
+              <ShareButton
+                title="Meu palpite · Bolão da Gangue"
+                text={`Meu palpite: ${match.home_team} ${mainBet.score_home} × ${mainBet.score_away} ${match.away_team} (odd ${formatOdd(mainBet.odd)})`}
+                className="text-gray-500 hover:text-emerald-400 shrink-0"
+              />
+            </div>
           </div>
         )}
       </div>

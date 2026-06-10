@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Search, RefreshCw, Radio, ChevronDown, ChevronUp } from 'lucide-react'
 import MatchCard from '../components/MatchCard'
+import { MatchCardSkeleton, RoundHeaderSkeleton } from '../components/Skeleton'
 import { useMatches } from '../hooks/useMatches'
 import { LIVE_STATUSES, FINISHED_STATUSES } from '../lib/api-football'
 
@@ -228,9 +229,11 @@ export default function Jogos() {
       {/* Conteúdo */}
       {isLoading ? (
         <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-16 bg-gray-900 rounded-2xl animate-pulse border border-gray-800" />
-          ))}
+          <RoundHeaderSkeleton />
+          <div className="space-y-2 pl-2 border-l-2 border-gray-800 ml-4">
+            {Array.from({ length: 3 }).map((_, i) => <MatchCardSkeleton key={i} />)}
+          </div>
+          <RoundHeaderSkeleton />
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-20">

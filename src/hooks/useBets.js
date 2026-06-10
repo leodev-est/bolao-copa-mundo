@@ -165,6 +165,28 @@ export function usePlaceMainBet() {
 
       return betId
     },
+    onMutate: async ({ matchId, scoreHome, scoreAway, scorers = [] }) => {
+      await queryClient.cancelQueries({ queryKey: ['main-bet', user.id, matchId] })
+      const prev = queryClient.getQueryData(['main-bet', user.id, matchId])
+      queryClient.setQueryData(['main-bet', user.id, matchId], old => ({
+        ...(old ?? {}),
+        score_home:       scoreHome,
+        score_away:       scoreAway,
+        predicted_result: deriveResult(scoreHome, scoreAway),
+        odd:              calcExactScoreOdd(scoreHome, scoreAway),
+        status:           'pending',
+        bet_scorers:      scorers.map(s => ({
+          team: s.team, slot_index: s.slot_index,
+          player_id: s.player_id ?? null, player_name: s.player_name, is_correct: null,
+        })),
+      }))
+      return { prev }
+    },
+    onError: (_, { matchId }, context) => {
+      if (context?.prev !== undefined) {
+        queryClient.setQueryData(['main-bet', user.id, matchId], context.prev)
+      }
+    },
     onSuccess: (_, { matchId }) => {
       queryClient.invalidateQueries({ queryKey: ['main-bet', user.id, matchId] })
       queryClient.invalidateQueries({ queryKey: ['user-bets', user.id] })
@@ -192,6 +214,21 @@ export function usePlaceBet() {
         .single()
       if (error) throw error
       return data
+    },
+    onMutate: async ({ betOptionId, matchId }) => {
+      await queryClient.cancelQueries({ queryKey: ['match-bets', user.id, matchId] })
+      const prev = queryClient.getQueryData(['match-bets', user.id, matchId])
+      queryClient.setQueryData(['match-bets', user.id, matchId], old => {
+        const bets    = [...(old?.bets ?? []), { id: `optimistic-${betOptionId}`, bet_option_id: betOptionId, match_id: matchId, status: 'pending', points_wagered: 1 }]
+        const betMap  = { ...(old?.betMap ?? {}), [betOptionId]: bets.at(-1) }
+        return { bets, betMap }
+      })
+      return { prev }
+    },
+    onError: (_, { matchId }, context) => {
+      if (context?.prev !== undefined) {
+        queryClient.setQueryData(['match-bets', user.id, matchId], context.prev)
+      }
     },
     onSuccess: (_, { matchId }) => {
       queryClient.invalidateQueries({ queryKey: ['match-bets', user.id, matchId] })

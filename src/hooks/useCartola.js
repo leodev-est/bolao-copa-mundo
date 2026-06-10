@@ -213,12 +213,35 @@ async function fetchRoundPlayerScores(roundId) {
 }
 
 export function useRoundPlayerScores(roundId) {
-  return useQuery({
+  const queryClient = useQueryClient()
+
+  const query = useQuery({
     queryKey: ['cartola-player-scores', roundId],
     queryFn:  () => fetchRoundPlayerScores(roundId),
     enabled:  !!roundId,
-    staleTime: 60_000,
+    staleTime: 30_000,
   })
+
+  // Realtime: atualiza pontuações durante a rodada ao vivo
+  useEffect(() => {
+    if (!roundId) return
+    const channel = supabase
+      .channel(`cartola-scores-${roundId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'cartola_player_scores',
+        filter: `round_id=eq.${roundId}`,
+      }, () => {
+        queryClient.invalidateQueries({ queryKey: ['cartola-player-scores', roundId] })
+        queryClient.invalidateQueries({ queryKey: ['cartola-leaderboard'] })
+        queryClient.invalidateQueries({ queryKey: ['cartola-round-leaderboard', roundId] })
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [roundId, queryClient])
+
+  return query
 }
 
 // ── Leaderboard ─────────────────────────────────────────────
