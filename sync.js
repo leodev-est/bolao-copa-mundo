@@ -44,7 +44,9 @@ function stageLabel(match) {
   const group = match.group?.replace('GROUP_', '') ?? ''
   if (stage === 'GROUP_STAGE') return group ? `Grupo ${group}` : 'Fase de Grupos'
   const labels = {
-    ROUND_OF_32:    'Oitavas (32)',
+    LAST_32:        'Rodada de 32',
+    LAST_16:        'Oitavas de Final',
+    ROUND_OF_32:    'Rodada de 32',
     ROUND_OF_16:    'Oitavas de Final',
     QUARTER_FINALS: 'Quartas de Final',
     SEMI_FINALS:    'Semifinal',
@@ -92,6 +94,7 @@ async function sync() {
       score_home:     m.score?.fullTime?.home ?? null,
       score_away:     m.score?.fullTime?.away ?? null,
       round:          stageLabel(m),
+      matchday:       m.matchday ?? null,
     }
 
     const { error } = await supabase

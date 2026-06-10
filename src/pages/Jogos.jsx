@@ -5,15 +5,17 @@ import { MatchCardSkeleton, RoundHeaderSkeleton } from '../components/Skeleton'
 import { useMatches } from '../hooks/useMatches'
 import { LIVE_STATUSES, FINISHED_STATUSES } from '../lib/api-football'
 
-// Definição das fases da Copa 2026
+// Fases da Copa 2026 em ordem de exibição
 const PHASES = [
-  { label: 'Rodada 1 — Fase de Grupos', from: '2026-06-11', to: '2026-06-18', emoji: '⚽' },
-  { label: 'Rodada 2 — Fase de Grupos', from: '2026-06-19', to: '2026-06-25', emoji: '⚽' },
-  { label: 'Rodada 3 — Fase de Grupos', from: '2026-06-26', to: '2026-07-02', emoji: '⚽' },
-  { label: 'Oitavas de Final',           from: '2026-07-03', to: '2026-07-06', emoji: '🏆' },
-  { label: 'Quartas de Final',           from: '2026-07-07', to: '2026-07-08', emoji: '🏆' },
-  { label: 'Semifinal',                  from: '2026-07-14', to: '2026-07-15', emoji: '🏆' },
-  { label: 'Final',                      from: '2026-07-19', to: '2026-07-19', emoji: '🥇' },
+  { label: 'Rodada 1 — Fase de Grupos', emoji: '⚽' },
+  { label: 'Rodada 2 — Fase de Grupos', emoji: '⚽' },
+  { label: 'Rodada 3 — Fase de Grupos', emoji: '⚽' },
+  { label: 'Rodada de 32',              emoji: '🏆' },
+  { label: 'Oitavas de Final',          emoji: '🏆' },
+  { label: 'Quartas de Final',          emoji: '🏆' },
+  { label: 'Semifinal',                 emoji: '🏆' },
+  { label: 'Terceiro Lugar',            emoji: '🥉' },
+  { label: 'Final',                     emoji: '🥇' },
 ]
 
 const TABS = [
@@ -23,12 +25,13 @@ const TABS = [
   { key: 'finished', label: 'Encerrados' },
 ]
 
-function phaseOf(matchDate) {
-  const d = new Date(matchDate)
-  for (const p of PHASES) {
-    if (d >= new Date(p.from) && d <= new Date(p.to + 'T23:59:59Z')) return p.label
+function phaseOf(match) {
+  // Fase de grupos: agrupa pelo matchday real (24 jogos cada)
+  if (match.matchday && match.round?.startsWith('Grupo')) {
+    return `Rodada ${match.matchday} — Fase de Grupos`
   }
-  return 'Outros'
+  // Mata-mata: usa o campo round salvo pelo sync
+  return match.round ?? 'Outros'
 }
 
 // ── Cabeçalho colapsável de cada rodada ─────────────────────────────
@@ -116,7 +119,7 @@ export default function Jogos() {
   const grouped = useMemo(() => {
     const map = {}
     for (const m of filtered) {
-      const label = phaseOf(m.match_date)
+      const label = phaseOf(m)
       if (!map[label]) map[label] = []
       map[label].push(m)
     }
