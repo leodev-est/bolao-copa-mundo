@@ -44,12 +44,13 @@ export const BUDGET = 100
 
 // ── Rodada atual ────────────────────────────────────────────
 async function fetchCurrentRound() {
-  // Pega a rodada ativa mais recente (start_date DESC = a que está acontecendo agora)
+  // Pega a rodada ativa mais antiga (start_date ASC = a que está acontecendo agora,
+  // não a Final que também pode estar 'open' no futuro)
   const { data, error } = await supabase
     .from('cartola_rounds')
     .select('*')
     .in('status', ['open', 'closed'])
-    .order('start_date', { ascending: false })
+    .order('start_date', { ascending: true })
     .limit(1)
     .maybeSingle()
 
