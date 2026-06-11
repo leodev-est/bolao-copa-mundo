@@ -2,9 +2,10 @@ import { useState, useEffect, useMemo } from 'react'
 import { ChevronDown, CheckCircle, AlertCircle, Lock, RefreshCw, Star } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import {
-  FORMATIONS, BUDGET, buildSlots,
+  FORMATIONS, buildSlots,
   useCartolaRound, useMyCartolaTeam,
   useSaveCartolaTeam, useRoundPlayerScores, useRoundFixtures,
+  useCartolaUserBudget,
 } from '../hooks/useCartola'
 import CartolaField from '../components/CartolaField'
 import PlayerPickerModal from '../components/PlayerPickerModal'
@@ -46,7 +47,12 @@ export default function Cartola() {
   const { data: myTeam, isLoading: teamLoading }  = useMyCartolaTeam(round?.id)
   const { data: scores }                           = useRoundPlayerScores(round?.id)
   const { data: fixtures = {} }                    = useRoundFixtures()
+  const { data: budgetData }                       = useCartolaUserBudget(round)
   const saveTeam = useSaveCartolaTeam()
+
+  const userBudget    = budgetData?.budget     ?? 100
+  const prevPoints    = budgetData?.prevPoints ?? null
+  const prevRoundName = budgetData?.prevRoundName ?? ''
 
   const [formation,       setFormation]       = useState('4-3-3')
   const [selectedPlayers, setSelectedPlayers] = useState({})  // { slotIndex: player }
@@ -79,7 +85,7 @@ export default function Cartola() {
     () => Object.values(selectedPlayers).reduce((acc, p) => acc + (p?.price ?? 0), 0),
     [selectedPlayers]
   )
-  const budgetLeft     = BUDGET - totalSpent
+  const budgetLeft     = userBudget - totalSpent
   const playerCount    = Object.values(selectedPlayers).filter(Boolean).length
   const isComplete     = playerCount === 11
   const hasCaptain     = captainSlot !== null && selectedPlayers[captainSlot]
@@ -212,7 +218,7 @@ export default function Cartola() {
           <p className={`text-lg font-black leading-none ${overBudget ? 'text-red-400' : 'text-emerald-400'}`}>
             C$ {budgetLeft.toFixed(1)}
           </p>
-          <p className="text-[10px] text-gray-600 mt-0.5">de C$ {BUDGET}</p>
+          <p className="text-[10px] text-gray-600 mt-0.5">de C$ {userBudget}</p>
         </div>
 
         {/* Jogadores */}
@@ -245,6 +251,27 @@ export default function Cartola() {
           )}
         </div>
       </div>
+
+      {/* Aviso de orçamento ajustado pela rodada anterior */}
+      {prevPoints !== null && !isLocked && (
+        <div className={`flex items-center gap-2 rounded-xl px-3 py-2 mb-3 text-xs ${
+          prevPoints < 0
+            ? 'bg-red-900/20 border border-red-700/30 text-red-400'
+            : prevPoints > 0
+            ? 'bg-emerald-900/20 border border-emerald-700/30 text-emerald-400'
+            : 'bg-gray-900 border border-gray-800 text-gray-500'
+        }`}>
+          <span className="font-semibold shrink-0">
+            {prevPoints > 0 ? '📈' : prevPoints < 0 ? '📉' : '➡️'}
+          </span>
+          <span>
+            {prevRoundName}: {prevPoints > 0 ? '+' : ''}{prevPoints.toFixed(1)} pts
+            {' '}→{' '}
+            <strong>C$ {userBudget.toFixed(1)}</strong>
+            {' '}nesta rodada
+          </span>
+        </div>
+      )}
 
       {/* Aviso lock */}
       {isLocked && (

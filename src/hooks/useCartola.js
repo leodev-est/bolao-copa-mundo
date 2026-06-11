@@ -42,6 +42,11 @@ export function buildFieldRows(formation) {
 
 export const BUDGET = 100
 
+// Configuração do sistema de orçamento dinâmico entre rodadas
+const BUDGET_FACTOR = 0.5   // 1 pt = C$0,50 de ajuste
+const BUDGET_MIN    = 70    // orçamento mínimo (pior caso)
+const BUDGET_MAX    = 120   // orçamento máximo (melhor caso)
+
 // ── Rodada atual ────────────────────────────────────────────
 async function fetchCurrentRound() {
   // Pega a rodada ativa mais antiga (start_date ASC = a que está acontecendo agora,
@@ -312,6 +317,42 @@ export function useRoundTeam(userId, roundId) {
     queryFn:  () => fetchMyTeam(userId, roundId),
     enabled:  !!userId && !!roundId,
     staleTime: 30_000,
+  })
+}
+
+// ── Orçamento dinâmico baseado na rodada anterior ───────────
+async function fetchUserBudget(userId, currentRound, allRounds) {
+  if (!userId || !currentRound || !allRounds?.length) return { budget: BUDGET, prevPoints: null }
+
+  const sorted = [...allRounds].sort((a, b) => new Date(a.start_date) - new Date(b.start_date))
+  const currentIdx = sorted.findIndex(r => r.id === currentRound.id)
+  if (currentIdx <= 0) return { budget: BUDGET, prevPoints: null }
+
+  const prevRound = sorted[currentIdx - 1]
+  const { data: prevTeam } = await supabase
+    .from('cartola_teams')
+    .select('total_points')
+    .eq('user_id', userId)
+    .eq('round_id', prevRound.id)
+    .maybeSingle()
+
+  if (!prevTeam) return { budget: BUDGET, prevPoints: null }
+
+  const pts    = prevTeam.total_points ?? 0
+  const raw    = BUDGET + pts * BUDGET_FACTOR
+  const budget = Math.round(Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, raw)) * 2) / 2
+  return { budget, prevPoints: pts, prevRoundName: prevRound.name }
+}
+
+export function useCartolaUserBudget(currentRound) {
+  const { user }          = useAuth()
+  const { data: allRounds } = useCartolaRounds()
+
+  return useQuery({
+    queryKey: ['cartola-user-budget', user?.id, currentRound?.id, allRounds?.length],
+    queryFn:  () => fetchUserBudget(user?.id, currentRound, allRounds),
+    enabled:  !!user?.id && !!currentRound && !!allRounds?.length,
+    staleTime: 60_000,
   })
 }
 
