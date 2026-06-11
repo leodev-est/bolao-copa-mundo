@@ -51,6 +51,7 @@ jobs:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_FOOTBALL_DATA_KEY:    ${{ secrets.VITE_FOOTBALL_DATA_KEY }}
+          VITE_API_FOOTBALL_KEY:     ${{ secrets.VITE_API_FOOTBALL_KEY }}
         run: node sync_lineups.js
 
       - name: 3 · Resolver palpites das partidas encerradas

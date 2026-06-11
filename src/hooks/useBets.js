@@ -128,7 +128,8 @@ export function usePlaceMainBet() {
           .eq('id', existing.id)
         betId = existing.id
         // Limpa scorers antigos
-        await supabase.from('bet_scorers').delete().eq('bet_id', betId)
+        const { error: delErr } = await supabase.from('bet_scorers').delete().eq('bet_id', betId)
+        if (delErr) throw delErr
       } else {
         const { data: newBet, error } = await supabase
           .from('bets')
