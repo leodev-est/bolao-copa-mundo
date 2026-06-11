@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { format } from 'date-fns'
+import { formatInTimeZone } from 'date-fns-tz'
 import { ArrowLeft, CheckCircle2, AlertTriangle, Minus, Plus, ChevronDown, ChevronUp, TrendingUp, TrendingDown } from 'lucide-react'
 import { useMatch } from '../hooks/useMatches'
 import { useMainBet, useMatchBets, usePlaceMainBet, usePlaceBet } from '../hooks/useBets'
@@ -383,7 +383,7 @@ export default function Palpite() {
           <div className="text-center">
             {matchStarted && match.score_home !== null
               ? <div className="text-4xl font-black text-white">{match.score_home} <span className="text-gray-600">×</span> {match.score_away}</div>
-              : <><div className="text-2xl font-black text-white">{format(matchDate, 'HH:mm')}</div><div className="text-sm text-gray-500 mt-1">{format(matchDate, 'dd/MM/yyyy')}</div></>
+              : <><div className="text-2xl font-black text-white">{formatInTimeZone(matchDate, 'America/Sao_Paulo', 'HH:mm')}</div><div className="text-sm text-gray-500 mt-1">{formatInTimeZone(matchDate, 'America/Sao_Paulo', 'dd/MM/yyyy')} <span className="text-gray-600 text-xs">BRT</span></div></>
             }
           </div>
           <div className="flex-1 flex flex-col items-center gap-2">

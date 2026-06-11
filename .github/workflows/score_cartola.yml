@@ -3,11 +3,17 @@ name: Copa — Sync · Resolver Palpites · Cartola
 on:
   schedule:
     # Copa do Mundo 2026: 11 Jun – 19 Jul
-    # Sede nos EUA/Canadá/México — jogos até 21h EDT = 01h UTC (terminam ~03h UTC)
-    # Cobre 24h por dia durante toda a Copa
-    - cron: '0 * 11-30 6 *'   # Junho: todo dia, toda hora
-    - cron: '0 * 1-19  7 *'   # Julho: todo dia, toda hora
-  workflow_dispatch:           # Roda manualmente pelo GitHub UI
+    # Sede nos EUA/Canadá/México — jogos entre 12h00-21h00 EDT = 16h00-01h00 UTC
+    #
+    # Durante janela de jogos (15h-02h UTC): a cada 10 min
+    - cron: '*/10 15-23 11-30 6 *'   # Junho: tarde/noite (horário dos jogos)
+    - cron: '*/10 0-2   11-30 6 *'   # Junho: madrugada (fim dos jogos noturnos)
+    - cron: '*/10 15-23 1-19  7 *'   # Julho: tarde/noite
+    - cron: '*/10 0-2   1-19  7 *'   # Julho: madrugada
+    # Fora da janela de jogos: a cada hora
+    - cron: '0 3-14 11-30 6 *'       # Junho: manhã/tarde
+    - cron: '0 3-14 1-19  7 *'       # Julho: manhã/tarde
+  workflow_dispatch:                  # Roda manualmente pelo GitHub UI
 
 # Garante que apenas um job roda por vez — evita conflitos de escrita no banco
 concurrency:

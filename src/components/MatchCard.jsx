@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom'
-import { format } from 'date-fns'
+import { formatInTimeZone } from 'date-fns-tz'
 import { ptBR } from 'date-fns/locale'
 import { ChevronRight } from 'lucide-react'
 import { STATUS_LABELS, LIVE_STATUSES, FINISHED_STATUSES } from '../lib/api-football'
+
+const BRT = 'America/Sao_Paulo'
 
 function StatusBadge({ status }) {
   const info = STATUS_LABELS[status] ?? { label: status, color: 'gray' }
@@ -72,11 +74,12 @@ export default function MatchCard({ match }) {
           ) : (
             <>
               <span className="text-xl font-bold text-white">
-                {format(matchDate, 'HH:mm')}
+                {formatInTimeZone(matchDate, BRT, 'HH:mm')}
               </span>
               <span className="text-xs text-gray-500">
-                {format(matchDate, "d 'de' MMM", { locale: ptBR })}
+                {formatInTimeZone(matchDate, BRT, "d 'de' MMM", { locale: ptBR })}
               </span>
+              <span className="text-[10px] text-gray-600 font-medium tracking-wide">BRT</span>
             </>
           )}
           {isUpcoming && (

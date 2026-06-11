@@ -1,7 +1,7 @@
 /**
- * Calcula e salva a pontuação do Cartola para partidas encerradas.
+ * Calcula e salva a pontuação do Cartola para partidas encerradas E ao vivo.
  * API: football-data.org v4 (gols e cartões via GET /v4/matches/{id})
- * Rodado pelo GitHub Actions a cada hora durante a Copa.
+ * Rodado pelo GitHub Actions a cada 10 min durante a Copa.
  *
  * Uso local: node score_cartola.js
  * Uso dry-run: node score_cartola.js --dry-run
@@ -98,20 +98,27 @@ function parseMatchDetail(detail) {
   return { goals, assists, yellows, reds, penSaved, ownGoals }
 }
 
-// ── Processa uma partida ────────────────────────────────────────────────────────
+const LIVE_STATUSES = ['1H', 'HT', '2H', 'ET', 'P']
+
+// ── Processa uma partida (encerrada ou ao vivo) ─────────────────────────────────
 async function processMatch(match, roundId) {
-  console.log(`  ⚽ ${match.home_team} ${match.score_home ?? '?'} × ${match.score_away ?? '?'} ${match.away_team}`)
+  const isLive = LIVE_STATUSES.includes(match.status)
+  const prefix = isLive ? '🔴' : '✅'
+  console.log(`  ${prefix} ${match.home_team} × ${match.away_team}${isLive ? ' (ao vivo)' : ''}`)
 
-  const { data: existing } = await supabase
-    .from('cartola_player_scores')
-    .select('id')
-    .eq('match_id', match.id)
-    .eq('round_id', roundId)
-    .limit(1)
+  // Partidas encerradas: pula se já pontuadas (scores não mudam mais)
+  if (!isLive) {
+    const { data: existing } = await supabase
+      .from('cartola_player_scores')
+      .select('id')
+      .eq('match_id', match.id)
+      .eq('round_id', roundId)
+      .limit(1)
 
-  if (existing?.length > 0) {
-    console.log('    ↳ já pontuado, pulando')
-    return false
+    if (existing?.length > 0) {
+      console.log('    ↳ já pontuado, pulando')
+      return false
+    }
   }
 
   let parsed = { goals: [], assists: [], yellows: [], reds: [], penSaved: [], ownGoals: [] }
@@ -123,6 +130,20 @@ async function processMatch(match, roundId) {
   }
 
   const { goals, assists, yellows, reds, penSaved, ownGoals } = parsed
+
+  // Para partidas ao vivo, calcula o placar atual pelo array de gols
+  // (score_home/score_away é null enquanto a partida não encerrou)
+  let effectiveHomeScore, effectiveAwayScore
+  if (isLive) {
+    effectiveHomeScore = goals.filter(g => g.teamId === match.home_team_id).length
+                       + ownGoals.filter(g => g.teamId === match.away_team_id).length
+    effectiveAwayScore = goals.filter(g => g.teamId === match.away_team_id).length
+                       + ownGoals.filter(g => g.teamId === match.home_team_id).length
+    console.log(`    ↳ placar parcial: ${effectiveHomeScore} × ${effectiveAwayScore} (${match.status})`)
+  } else {
+    effectiveHomeScore = match.score_home ?? 0
+    effectiveAwayScore = match.score_away ?? 0
+  }
 
   const { data: players } = await supabase
     .from('cartola_players')
@@ -137,9 +158,8 @@ async function processMatch(match, roundId) {
   const rows = players.map(player => {
     const pid = player.api_player_id
     const isHome = player.team_id === match.home_team_id
-    // Só considera clean sheet se o placar está confirmado (não null)
-    const conceded = isHome ? match.score_away : match.score_home
-    const cleanSheet = conceded !== null && conceded !== undefined && conceded === 0
+    const conceded = isHome ? effectiveAwayScore : effectiveHomeScore
+    const cleanSheet = conceded === 0
 
     const playerGoals    = goals.filter(e => e.pid === pid).length
     const playerAssists  = assists.filter(e => e.pid === pid).length
@@ -165,9 +185,11 @@ async function processMatch(match, roundId) {
   })
 
   const pontuados = rows.filter(r => r.total_points !== 0)
-  console.log(`    ↳ ${players.length} jogadores | ${pontuados.length} pontuaram`)
+  console.log(`    ↳ ${players.length} jogadores | ${pontuados.length} pontuaram${isLive ? ' (provisório)' : ''}`)
 
   if (!DRY_RUN && rows.length > 0) {
+    // Live: upsert sempre (pontuação muda a cada gol)
+    // Encerrada: upsert na primeira vez (condição acima garante que só roda 1x)
     const { error } = await supabase
       .from('cartola_player_scores')
       .upsert(rows, { onConflict: 'player_id,round_id,match_id' })
@@ -312,33 +334,53 @@ async function main() {
 
     const { data: matches } = await supabase
       .from('matches')
-      .select('id, api_match_id, home_team, away_team, home_team_id, away_team_id, score_home, score_away')
+      .select('id, api_match_id, home_team, away_team, home_team_id, away_team_id, score_home, score_away, status')
       .gte('match_date', round.start_date)
       .lte('match_date', round.end_date + 'T23:59:59Z')
-      .in('status', ['FT', 'AET', 'PEN'])
+      .in('status', ['FT', 'AET', 'PEN', '1H', 'HT', '2H', 'ET', 'P'])
 
-    if (!matches?.length) { console.log('  ↳ nenhuma partida encerrada ainda\n'); continue }
+    if (!matches?.length) { console.log('  ↳ nenhuma partida encerrada ou ao vivo ainda\n'); continue }
 
-    console.log(`  ${matches.length} partidas encerradas:\n`)
+    const liveCount     = matches.filter(m => LIVE_STATUSES.includes(m.status)).length
+    const finishedCount = matches.length - liveCount
+    const parts = [finishedCount > 0 && `${finishedCount} encerrada(s)`, liveCount > 0 && `${liveCount} ao vivo`].filter(Boolean)
+    console.log(`  ${parts.join(' + ')}:\n`)
 
-    let processed = 0
+    let liveProcessed = 0, finishedProcessed = 0
     for (const match of matches) {
       const scored = await processMatch(match, round.id)
-      if (scored) processed++
+      if (scored) {
+        if (LIVE_STATUSES.includes(match.status)) liveProcessed++
+        else finishedProcessed++
+      }
       await new Promise(r => setTimeout(r, 6500)) // respeita 10 req/min do plano gratuito
     }
 
-    if (processed > 0) {
+    if (liveProcessed + finishedProcessed > 0) {
       console.log(`\n📊 Recalculando pontuação dos times...`)
       await recalcTeamTotals(round.id)
     }
 
-    await checkRoundCompletion(round)
+    // Só verifica conclusão da rodada quando não há mais jogos ao vivo
+    if (liveCount === 0) {
+      await checkRoundCompletion(round)
+    }
+
     console.log()
   }
 
-  // Ajusta preços de todos os jogadores com base na performance acumulada na Copa
-  await updatePlayerPrices()
+  // Ajusta preços apenas quando não há jogos ao vivo (evita distorção com pontuações parciais)
+  const { data: liveNow } = await supabase
+    .from('matches')
+    .select('id')
+    .in('status', LIVE_STATUSES)
+    .limit(1)
+
+  if (!liveNow?.length) {
+    await updatePlayerPrices()
+  } else {
+    console.log('\n⏸  Preços não ajustados: há jogos ao vivo no momento.')
+  }
 
   console.log('✅ Concluído.')
 }
