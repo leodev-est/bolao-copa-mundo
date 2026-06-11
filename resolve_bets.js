@@ -70,6 +70,12 @@ async function main() {
 
     if (!count) continue
 
+    // Pula se o placar ainda não está disponível — sync.js preencherá depois
+    if (match.score_home === null || match.score_away === null) {
+      console.log(`  ⏳ ${match.home_team} × ${match.away_team} — placar nulo, aguardando próximo sync`)
+      continue
+    }
+
     console.log(`⚽ ${match.home_team} ${match.score_home} × ${match.score_away} ${match.away_team} (${count} palpites)`)
 
     // Verifica se havia escalação oficial — se não, artilheiros são ignorados

@@ -96,11 +96,17 @@ async function sync() {
       away_team_id:   m.awayTeam.id,
       match_date:     m.utcDate,
       status:         parseStatus(m),
-      score_home:     m.score?.fullTime?.home ?? null,
-      score_away:     m.score?.fullTime?.away ?? null,
       round:          stageLabel(m),
       matchday:       m.matchday ?? null,
     }
+
+    // Só inclui o placar quando a API retorna valor não-nulo.
+    // Evita sobrescrever um placar correto já salvo com null
+    // durante atualizações intermediárias (jogo ao vivo, lag da API).
+    const sh = m.score?.fullTime?.home
+    const sa = m.score?.fullTime?.away
+    if (sh !== null && sh !== undefined) record.score_home = sh
+    if (sa !== null && sa !== undefined) record.score_away = sa
 
     const { error } = await supabase
       .from('matches')
