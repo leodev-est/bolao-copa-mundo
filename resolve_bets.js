@@ -72,6 +72,18 @@ async function main() {
 
     console.log(`⚽ ${match.home_team} ${match.score_home} × ${match.score_away} ${match.away_team} (${count} palpites)`)
 
+    // Verifica se havia escalação oficial — se não, artilheiros são ignorados
+    const { count: lineupCount } = await supabase
+      .from('bet_options')
+      .select('id', { count: 'exact', head: true })
+      .eq('match_id', match.id)
+      .eq('type', 'goalscorer')
+
+    const hasOfficialLineup = (lineupCount ?? 0) > 0
+    if (!hasOfficialLineup) {
+      console.log('  ⚠️  Sem escalação via API — artilheiros anulados automaticamente')
+    }
+
     // Busca artilheiros da partida
     const goals = await getGoals(match.api_match_id)
     await sleep(6500) // respeita 10 req/min do plano gratuito
@@ -99,22 +111,25 @@ async function main() {
       else if (resultOk) pointsWon += bet.points_wagered * 1.3
 
       // Artilheiros: +0.5 por slot correto
+      // Só pontua se havia escalação oficial via API; caso contrário, anula silenciosamente
       const scorerUpdates = []
-      for (const scorer of (bet.bet_scorers ?? [])) {
-        if (!scorer?.id) continue   // guard contra null
-        let correct = false
-        if (scorer.player_id) {
-          correct = goals.some(g =>
-            g.player_id === scorer.player_id &&
-            (scorer.team === 'home' ? g.team === match.home_team : g.team === match.away_team)
-          )
-        } else if (scorer.player_name) {
-          correct = goals.some(g =>
-            g.player_name?.toLowerCase() === scorer.player_name.toLowerCase()
-          )
+      if (hasOfficialLineup) {
+        for (const scorer of (bet.bet_scorers ?? [])) {
+          if (!scorer?.id) continue
+          let correct = false
+          if (scorer.player_id) {
+            correct = goals.some(g =>
+              g.player_id === scorer.player_id &&
+              (scorer.team === 'home' ? g.team === match.home_team : g.team === match.away_team)
+            )
+          } else if (scorer.player_name) {
+            correct = goals.some(g =>
+              g.player_name?.toLowerCase() === scorer.player_name.toLowerCase()
+            )
+          }
+          if (correct) pointsWon += 0.5
+          scorerUpdates.push({ id: scorer.id, correct })
         }
-        if (correct) pointsWon += 0.5
-        scorerUpdates.push({ id: scorer.id, correct })
       }
 
       const betStatus = exactScore || resultOk || pointsWon > 0 ? 'won' : 'lost'

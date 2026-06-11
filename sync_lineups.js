@@ -170,10 +170,13 @@ async function main() {
   const queryEnd   = new Date(now.getTime() +  75 * 60 * 1000)
 
   // Janelas em que realmente chamamos a API (minutos até o kickoff)
+  // Cada janela tem ≥10 min de largura para garantir que o cron de 10 min sempre acerta
   const CHECK_WINDOWS = [
     { label: '~60 min', min: 50, max: 70 },
-    { label: '~30 min', min: 20, max: 50 },
-    { label: '~15 min', min:  5, max: 20 },
+    { label: '~30 min', min: 25, max: 50 },
+    { label: '~15 min', min: 13, max: 25 },
+    { label: '~10 min', min:  6, max: 13 },
+    { label: '~5 min',  min:  1, max:  6 },
   ]
 
   const { data: matches, error } = await supabase
