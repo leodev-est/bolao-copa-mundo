@@ -148,7 +148,7 @@ function PlayerList({ players, maxSlots, selected, onChange, disabled }) {
 
 // ─── ScorerSection ────────────────────────────────────────────────────────────
 
-function ScorerSection({ scoreHome, scoreAway, homeName, awayName, homePlayers, awayPlayers, scorers, onChange, disabled }) {
+function ScorerSection({ scoreHome, scoreAway, homeName, awayName, homePlayers, awayPlayers, scorers, onChange, disabled, isOfficialLineup }) {
   if (scoreHome === 0 && scoreAway === 0) {
     return (
       <div className="p-4 bg-gray-800/30 rounded-xl border border-gray-800 text-center">
@@ -176,6 +176,17 @@ function ScorerSection({ scoreHome, scoreAway, homeName, awayName, homePlayers, 
 
   return (
     <div className="space-y-5">
+      {/* Indicador de fonte da escalação */}
+      {(homePlayers.length > 0 || awayPlayers.length > 0) && (
+        <div className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg w-fit ${
+          isOfficialLineup
+            ? 'bg-emerald-900/30 text-emerald-400'
+            : 'bg-yellow-900/30 text-yellow-500'
+        }`}>
+          <span>{isOfficialLineup ? '✓ Escalação oficial confirmada' : '⚠ Escalação prévia — pode estar incompleta'}</span>
+        </div>
+      )}
+
       {scoreHome > 0 && (
         <div>
           <div className="flex items-center justify-between mb-2">
@@ -457,6 +468,7 @@ export default function Palpite() {
             awayPlayers={awayPlayers}
             scorers={scorers}
             onChange={setScorers}
+            isOfficialLineup={goalscorerOpts.length > 0}
             disabled={matchStarted}
           />
         </div>
