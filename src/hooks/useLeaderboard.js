@@ -2,6 +2,40 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
+async function fetchUnifiedLeaderboard() {
+  const { data, error } = await supabase
+    .from('unified_leaderboard')
+    .select('*')
+    .order('position', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
+export function useUnifiedLeaderboard() {
+  const queryClient = useQueryClient()
+
+  const query = useQuery({
+    queryKey: ['unified-leaderboard'],
+    queryFn:  fetchUnifiedLeaderboard,
+    staleTime: 30_000,
+  })
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('unified-leaderboard-realtime')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bets' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['unified-leaderboard'] })
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cartola_teams' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['unified-leaderboard'] })
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [queryClient])
+
+  return { ...query, leaderboard: query.data ?? [] }
+}
+
 async function fetchLeaderboard() {
   const { data, error } = await supabase
     .from('leaderboard_with_change')
