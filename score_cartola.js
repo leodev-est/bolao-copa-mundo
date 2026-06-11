@@ -293,6 +293,42 @@ async function updatePlayerPrices() {
   console.log(`  ↳ ${changed} jogadores com preço atualizado${DRY_RUN ? ' (dry run)' : ''}`)
 }
 
+// Calcula o custo mínimo para montar um time de 11 jogadores válido
+async function computeMinTeamCost() {
+  const { data: players } = await supabase
+    .from('cartola_players')
+    .select('position, price')
+    .eq('available', true)
+    .order('price', { ascending: true })
+
+  const byPos = {}
+  for (const p of players ?? []) {
+    if (!byPos[p.position]) byPos[p.position] = []
+    byPos[p.position].push(p.price)
+  }
+
+  // Todas as formações suportadas — pega o time mais barato entre elas
+  const formations = [
+    { GK: 1, DEF: 4, MID: 3, FWD: 3 },
+    { GK: 1, DEF: 4, MID: 4, FWD: 2 },
+    { GK: 1, DEF: 3, MID: 5, FWD: 2 },
+    { GK: 1, DEF: 4, MID: 5, FWD: 1 },
+  ]
+
+  let minCost = Infinity
+  for (const f of formations) {
+    let cost = 0; let valid = true
+    for (const [pos, count] of Object.entries(f)) {
+      const prices = byPos[pos] ?? []
+      if (prices.length < count) { valid = false; break }
+      cost += prices.slice(0, count).reduce((a, b) => a + b, 0)
+    }
+    if (valid && cost < minCost) minCost = cost
+  }
+
+  return minCost === Infinity ? null : Math.ceil(minCost * 2) / 2 // arredonda pra cima no 0,5
+}
+
 // ── Verifica se a rodada encerrou ───────────────────────────────────────────────
 async function checkRoundCompletion(round) {
   const { data: unfinished, error } = await supabase
@@ -383,6 +419,17 @@ async function main() {
 
   if (!liveNow?.length) {
     await updatePlayerPrices()
+
+    // Atualiza o orçamento mínimo necessário pra montar um time nessa rodada
+    const minCost = await computeMinTeamCost()
+    if (minCost !== null) {
+      console.log(`\n💼 Custo mínimo de time: C$${minCost}`)
+      for (const round of rounds ?? []) {
+        if (!DRY_RUN) {
+          await supabase.from('cartola_rounds').update({ min_budget: minCost }).eq('id', round.id)
+        }
+      }
+    }
   } else {
     console.log('\n⏸  Preços não ajustados: há jogos ao vivo no momento.')
   }

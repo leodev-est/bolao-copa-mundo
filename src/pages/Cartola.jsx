@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { ChevronDown, CheckCircle, AlertCircle, Lock, RefreshCw, Star } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import {
@@ -62,21 +62,72 @@ export default function Cartola() {
   const [saved,           setSaved]           = useState(false)
   const [saveError,       setSaveError]       = useState('')
 
-  // Quando o time salvo carregar, popula o estado local
+  const isLocked   = round?.status !== 'open'
+  const draftKey   = round?.id ? `cartola-draft-${round.id}` : null
+  const initialized = useRef(false)  // true após checar localStorage (libera auto-save)
+  const loadedDB    = useRef(false)  // true após carregar do banco (não sobrescreve rascunho)
+  const lastKey     = useRef(null)
+
+  // Carrega rascunho (localStorage) ou time salvo no banco
   useEffect(() => {
-    if (!myTeam) return
+    // Reset ao trocar de rodada
+    if (lastKey.current !== draftKey) {
+      initialized.current = false
+      loadedDB.current    = false
+      lastKey.current     = draftKey
+    }
+
+    if (!draftKey) return
+
+    // Rodada bloqueada: sempre mostra o estado mais recente do banco
+    if (isLocked) {
+      if (!myTeam) return
+      setFormation(myTeam.formation)
+      const m = {}; let c = null
+      for (const tp of myTeam.cartola_team_players ?? []) {
+        m[tp.position_slot] = tp.cartola_players
+        if (tp.is_captain) c = tp.position_slot
+      }
+      setSelectedPlayers(m); setCaptainSlot(c)
+      return
+    }
+
+    // Verifica localStorage uma única vez por rodada
+    if (!initialized.current) {
+      initialized.current = true   // libera auto-save imediatamente
+      try {
+        const raw = localStorage.getItem(draftKey)
+        if (raw) {
+          const d = JSON.parse(raw)
+          setFormation(d.formation ?? '4-3-3')
+          setSelectedPlayers(d.selectedPlayers ?? {})
+          setCaptainSlot(d.captainSlot ?? null)
+          loadedDB.current = true  // rascunho encontrado — não sobrescreve com banco
+          return
+        }
+      } catch {}
+    }
+
+    // Carrega do banco se não veio do localStorage e myTeam já chegou
+    if (loadedDB.current || myTeam == null) return
+    loadedDB.current = true
     setFormation(myTeam.formation)
-    const playerMap = {}
-    let cap = null
+    const playerMap = {}; let cap = null
     for (const tp of myTeam.cartola_team_players ?? []) {
       playerMap[tp.position_slot] = tp.cartola_players
       if (tp.is_captain) cap = tp.position_slot
     }
-    setSelectedPlayers(playerMap)
-    setCaptainSlot(cap)
-  }, [myTeam])
+    setSelectedPlayers(playerMap); setCaptainSlot(cap)
+  }, [myTeam, draftKey, isLocked])
 
-  const isLocked = round?.status !== 'open'
+  // Auto-salva rascunho sempre que o estado muda (após inicialização)
+  useEffect(() => {
+    if (!initialized.current || !draftKey || isLocked) return
+    if (Object.keys(selectedPlayers).length === 0 && captainSlot === null) return
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({ formation, selectedPlayers, captainSlot }))
+    } catch {}
+  }, [formation, selectedPlayers, captainSlot, draftKey, isLocked])
 
   // Recalcula orçamento e contadores
   const slots = buildSlots(formation)
@@ -121,11 +172,7 @@ export default function Cartola() {
   }
 
   function handleRemovePlayer(slot) {
-    setSelectedPlayers(prev => {
-      const next = { ...prev }
-      delete next[slot.slotIndex]
-      return next
-    })
+    setSelectedPlayers(prev => { const n = { ...prev }; delete n[slot.slotIndex]; return n })
     if (captainSlot === slot.slotIndex) setCaptainSlot(null)
   }
 
@@ -134,12 +181,42 @@ export default function Cartola() {
   }
 
   function handleFormationChange(newFormation) {
-    if (playerCount > 0) {
-      // Limpa time ao trocar formação
-      setSelectedPlayers({})
-      setCaptainSlot(null)
-    }
     setFormation(newFormation)
+    if (playerCount === 0) return
+
+    // Remapeia jogadores existentes para os novos slots por posição.
+    // Jogadores excedentes (ex: 3º atacante ao mudar para 4-4-2) são descartados.
+    const oldSlots = buildSlots(formation)
+    const newSlots = buildSlots(newFormation)
+
+    const byPosition = {}
+    for (const [idxStr, player] of Object.entries(selectedPlayers)) {
+      if (!player) continue
+      const slot = oldSlots.find(s => s.slotIndex === parseInt(idxStr))
+      if (!slot) continue
+      if (!byPosition[slot.position]) byPosition[slot.position] = []
+      byPosition[slot.position].push({ player, isCaptain: parseInt(idxStr) === captainSlot })
+    }
+
+    const newSlotsByPos = {}
+    for (const s of newSlots) {
+      if (!newSlotsByPos[s.position]) newSlotsByPos[s.position] = []
+      newSlotsByPos[s.position].push(s)
+    }
+
+    const newPlayers = {}
+    let newCaptain = null
+    for (const pos of ['GK', 'DEF', 'MID', 'FWD']) {
+      const players = byPosition[pos] ?? []
+      const slots   = newSlotsByPos[pos] ?? []
+      for (let i = 0; i < Math.min(players.length, slots.length); i++) {
+        newPlayers[slots[i].slotIndex] = players[i].player
+        if (players[i].isCaptain) newCaptain = slots[i].slotIndex
+      }
+    }
+
+    setSelectedPlayers(newPlayers)
+    setCaptainSlot(newCaptain)
   }
 
   async function handleConfirm() {
@@ -152,6 +229,7 @@ export default function Cartola() {
         players:    selectedPlayers,
         captainSlot,
       })
+      if (draftKey) try { localStorage.removeItem(draftKey) } catch {}
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (err) {

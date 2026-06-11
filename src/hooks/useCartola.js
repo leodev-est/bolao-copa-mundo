@@ -44,7 +44,7 @@ export const BUDGET = 100
 
 // Configuração do sistema de orçamento dinâmico entre rodadas
 const BUDGET_FACTOR = 0.5   // 1 pt = C$0,50 de ajuste
-const BUDGET_MIN    = 70    // orçamento mínimo (pior caso)
+const BUDGET_MIN    = 80    // orçamento mínimo (pior caso)
 const BUDGET_MAX    = 120   // orçamento máximo (melhor caso)
 
 // ── Rodada atual ────────────────────────────────────────────
@@ -338,9 +338,11 @@ async function fetchUserBudget(userId, currentRound, allRounds) {
 
   if (!prevTeam) return { budget: BUDGET, prevPoints: null }
 
-  const pts    = prevTeam.total_points ?? 0
-  const raw    = BUDGET + pts * BUDGET_FACTOR
-  const budget = Math.round(Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, raw)) * 2) / 2
+  const pts       = prevTeam.total_points ?? 0
+  const raw       = BUDGET + pts * BUDGET_FACTOR
+  // Piso dinâmico: max(80, custo mínimo do time mais barato da rodada atual)
+  const dynamicMin = Math.max(BUDGET_MIN, currentRound.min_budget ?? BUDGET_MIN)
+  const budget     = Math.round(Math.min(BUDGET_MAX, Math.max(dynamicMin, raw)) * 2) / 2
   return { budget, prevPoints: pts, prevRoundName: prevRound.name }
 }
 
