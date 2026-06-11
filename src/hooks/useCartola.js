@@ -336,14 +336,24 @@ export function useSaveCartolaTeam() {
 
       let teamId
 
+      // Faz backup dos jogadores atuais ANTES de qualquer alteração.
+      // Se o save falhar, restauramos o backup e o time não perde nada.
+      let backup = []
       if (existing) {
-        await supabase
+        const { data: bk } = await supabase
+          .from('cartola_team_players')
+          .select('player_id, position_slot, is_captain')
+          .eq('cartola_team_id', existing.id)
+        backup = bk ?? []
+      }
+
+      if (existing) {
+        const { error: updErr } = await supabase
           .from('cartola_teams')
           .update({ formation, total_spent: totalSpent, updated_at: new Date().toISOString() })
           .eq('id', existing.id)
+        if (updErr) throw updErr
         teamId = existing.id
-        // Remove jogadores antigos
-        await supabase.from('cartola_team_players').delete().eq('cartola_team_id', teamId)
       } else {
         const { data: newTeam, error } = await supabase
           .from('cartola_teams')
@@ -354,7 +364,7 @@ export function useSaveCartolaTeam() {
         teamId = newTeam.id
       }
 
-      // Insere os jogadores
+      // Monta lista de novos jogadores
       const teamPlayers = Object.entries(players)
         .filter(([, p]) => p != null)
         .map(([slotIndex, p]) => ({
@@ -364,9 +374,33 @@ export function useSaveCartolaTeam() {
           is_captain:      parseInt(slotIndex) === captainSlot,
         }))
 
-      if (teamPlayers.length > 0) {
-        const { error } = await supabase.from('cartola_team_players').insert(teamPlayers)
-        if (error) throw error
+      if (teamPlayers.length === 0) throw new Error('Selecione os 11 jogadores antes de confirmar.')
+
+      // Tenta upsert atômico por slot (funciona se a migration de constraints foi aplicada).
+      // Se não tiver a constraint, cai no fallback com backup/restore abaixo.
+      const { error: upsertErr } = await supabase
+        .from('cartola_team_players')
+        .upsert(teamPlayers, { onConflict: 'cartola_team_id,position_slot' })
+
+      if (!upsertErr) {
+        // Upsert funcionou: remove possíveis slots extras de formação anterior
+        const usedSlots = teamPlayers.map(p => p.position_slot).join(',')
+        await supabase.from('cartola_team_players')
+          .delete()
+          .eq('cartola_team_id', teamId)
+          .not('position_slot', 'in', `(${usedSlots})`)
+      } else {
+        // Fallback com backup: delete → insert, restaura se insert falhar
+        await supabase.from('cartola_team_players').delete().eq('cartola_team_id', teamId)
+        const { error: insErr } = await supabase.from('cartola_team_players').insert(teamPlayers)
+        if (insErr) {
+          // Restaura o time original para não perder a escalação
+          if (backup.length > 0) {
+            await supabase.from('cartola_team_players')
+              .insert(backup.map(p => ({ ...p, cartola_team_id: teamId })))
+          }
+          throw insErr
+        }
       }
 
       return teamId

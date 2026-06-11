@@ -150,16 +150,23 @@ async function main() {
     available:     true,
   }))
 
-  const { error } = await supabase
+  // Tenta upsert por nome+time (seguro, não duplica ao rodar várias vezes).
+  // Requer migration_cartola_constraints.sql aplicada no Supabase.
+  const { error: upsertErr } = await supabase
     .from('cartola_players')
-    .insert(rows)
+    .upsert(rows, { onConflict: 'name,team_name', ignoreDuplicates: false })
 
-  if (error) {
-    console.error('❌ Erro:', error.message)
+  if (upsertErr) {
+    if (upsertErr.message.includes('unique') || upsertErr.message.includes('constraint')) {
+      console.error('❌ Falta a constraint UNIQUE(name, team_name).')
+      console.error('   Rode a migration supabase/migration_cartola_constraints.sql no Supabase SQL Editor primeiro.')
+    } else {
+      console.error('❌ Erro:', upsertErr.message)
+    }
     process.exit(1)
   }
 
-  console.log(`✅ ${rows.length} jogadores inseridos com sucesso!`)
+  console.log(`✅ ${rows.length} jogadores inseridos/atualizados com sucesso!`)
   console.log('\nDistribuição por posição:')
   ;['GK','DEF','MID','FWD'].forEach(pos => {
     const count = rows.filter(r => r.position === pos).length

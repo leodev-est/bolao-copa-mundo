@@ -327,10 +327,8 @@ async function main() {
   for (const round of rounds) {
     console.log(`📅 Rodada: ${round.name} (${round.status})`)
 
-    if (round.status === 'open' && !DRY_RUN) {
-      await supabase.from('cartola_rounds').update({ status: 'closed' }).eq('id', round.id)
-      console.log('  ↳ status → closed')
-    }
+    // Não altera o status da rodada aqui — o fechamento é gerenciado pelo pg_cron.
+    // Rodadas 'open' ainda podem ter pontuações ao vivo calculadas normalmente.
 
     const { data: matches } = await supabase
       .from('matches')
