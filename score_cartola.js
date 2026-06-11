@@ -106,6 +106,12 @@ async function processMatch(match, roundId) {
   const prefix = isLive ? '🔴' : '✅'
   console.log(`  ${prefix} ${match.home_team} × ${match.away_team}${isLive ? ' (ao vivo)' : ''}`)
 
+  // Partidas encerradas sem placar: aguarda o próximo sync popular os dados
+  if (!isLive && (match.score_home === null || match.score_away === null)) {
+    console.log('    ↳ placar nulo, aguardando próximo sync')
+    return false
+  }
+
   // Partidas encerradas: pula se já pontuadas (scores não mudam mais)
   if (!isLive) {
     const { data: existing } = await supabase
