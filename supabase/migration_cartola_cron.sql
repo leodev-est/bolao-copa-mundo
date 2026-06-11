@@ -5,11 +5,18 @@
 --   2. Supabase Dashboard → SQL Editor → execute este arquivo
 --
 -- O que faz:
---   - Fecha o mercado (open → closed) 30 min antes do 1º jogo da rodada
+--   - Fecha o mercado usando market_close_at (se definido) OU 30 min antes do 1º jogo
 --   - Encerra a rodada (closed → finished) quando o end_date passa
 --   - Roda automaticamente a cada minuto via pg_cron
+--
+-- Para definir horário exato de fechamento de uma rodada:
+--   UPDATE cartola_rounds SET market_close_at = '2026-06-11T16:55:00Z' WHERE name LIKE 'Rodada 1%';
 
--- ── 1. Função de gerenciamento ───────────────────────────────────────────────
+-- ── 1. Coluna market_close_at (horário explícito de fechamento por rodada) ──
+
+ALTER TABLE cartola_rounds ADD COLUMN IF NOT EXISTS market_close_at TIMESTAMPTZ;
+
+-- ── 2. Função de gerenciamento ───────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.auto_manage_cartola_rounds()
 RETURNS void
@@ -18,17 +25,21 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  -- Fecha o mercado 30 min antes do PRIMEIRO JOGO da rodada
-  -- (usa o menor match_date dos jogos da rodada, não o start_date)
+  -- Fecha o mercado:
+  --   Se market_close_at estiver definido: usa esse horário exato
+  --   Caso contrário: 30 min antes do primeiro jogo da rodada
   UPDATE public.cartola_rounds r
   SET status = 'closed'
   WHERE r.status = 'open'
-    AND (
-      SELECT MIN(m.match_date)
-      FROM public.matches m
-      WHERE m.match_date::timestamptz >= r.start_date::timestamptz
-        AND m.match_date::timestamptz <= r.end_date::timestamptz
-    ) <= (NOW() + INTERVAL '30 minutes');
+    AND COALESCE(
+      r.market_close_at,
+      (
+        SELECT MIN(m.match_date)
+        FROM public.matches m
+        WHERE m.match_date::timestamptz >= r.start_date::timestamptz
+          AND m.match_date::timestamptz <= r.end_date::timestamptz
+      ) - INTERVAL '30 minutes'
+    ) <= NOW();
 
   -- Encerra rodadas cujo end_date já passou
   UPDATE public.cartola_rounds
@@ -41,16 +52,15 @@ $$;
 -- Garante que apenas admins possam executar manualmente
 REVOKE ALL ON FUNCTION public.auto_manage_cartola_rounds() FROM PUBLIC;
 
--- ── 2. Cron job — executa a cada minuto ─────────────────────────────────────
+-- ── 3. Cron job — executa a cada minuto ─────────────────────────────────────
 
--- Remove agendamento anterior se existir (para re-execuções seguras)
 DO $$ BEGIN
   PERFORM cron.unschedule('auto-cartola-rounds');
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
 SELECT cron.schedule(
-  'auto-cartola-rounds',          -- nome do job
-  '* * * * *',                    -- a cada minuto
+  'auto-cartola-rounds',
+  '* * * * *',
   'SELECT public.auto_manage_cartola_rounds()'
 );
