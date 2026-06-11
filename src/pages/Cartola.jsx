@@ -12,6 +12,110 @@ import PlayerPickerModal from '../components/PlayerPickerModal'
 import ShareButton from '../components/ShareButton'
 import { CartolaFieldSkeleton } from '../components/Skeleton'
 
+const POS_STYLE = {
+  GK:  'bg-yellow-900/40 text-yellow-400',
+  DEF: 'bg-blue-900/40 text-blue-400',
+  MID: 'bg-purple-900/40 text-purple-400',
+  FWD: 'bg-emerald-900/40 text-emerald-400',
+}
+
+function PartialScorePanel({ selectedPlayers, captainSlot, slots, scores = {}, totalPoints, isFinished }) {
+  const rows = slots
+    .map(slot => {
+      const player = selectedPlayers[slot.slotIndex]
+      if (!player) return null
+      const score    = scores[player.id] ?? null
+      const isCap    = slot.slotIndex === captainSlot
+      const basePts  = score?.total_points ?? null
+      const pts      = basePts !== null ? (isCap ? basePts * 2 : basePts) : null
+      return { player, score, isCap, pts }
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      if ((a.score != null) !== (b.score != null)) return a.score != null ? -1 : 1
+      return (b.pts ?? 0) - (a.pts ?? 0)
+    })
+
+  return (
+    <div className="mt-4 bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+      <div className="px-4 pt-3.5 pb-2.5 flex items-center justify-between border-b border-gray-800">
+        <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">
+          {isFinished ? 'Pontuação final' : 'Parcial da rodada'}
+        </p>
+        <p className="text-white text-xl font-black">
+          {(totalPoints ?? 0).toFixed(1)}
+          <span className="text-gray-500 text-xs font-normal ml-1">pts</span>
+        </p>
+      </div>
+
+      <div className="divide-y divide-gray-800/50">
+        {rows.map(({ player, score, isCap, pts }) => {
+          const noEvents = score && score.goals === 0 && score.assists === 0 &&
+            !score.clean_sheet && !score.yellow_card && !score.red_card && (score.own_goal ?? 0) === 0
+
+          return (
+            <div key={player.id} className="px-4 py-2.5 flex items-center gap-3">
+              <span className={`text-[10px] font-bold w-7 h-7 flex items-center justify-center rounded-lg shrink-0 ${POS_STYLE[player.position] ?? 'bg-gray-800 text-gray-400'}`}>
+                {player.position}
+              </span>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-white text-sm font-medium truncate leading-tight">{player.name}</p>
+                  {isCap && (
+                    <span className="w-4 h-4 rounded-full bg-orange-500 flex items-center justify-center text-white text-[9px] font-black shrink-0">C</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  {score ? (
+                    noEvents ? (
+                      <span className="text-[10px] text-gray-600">sem eventos</span>
+                    ) : (
+                      <>
+                        {score.goals > 0        && <span className="text-[10px] text-emerald-400 font-medium">⚽ {score.goals}</span>}
+                        {score.assists > 0      && <span className="text-[10px] text-blue-400 font-medium">A {score.assists}</span>}
+                        {score.clean_sheet      && <span className="text-[10px] text-gray-400 font-medium">CS</span>}
+                        {score.yellow_card      && <span className="text-[10px] text-yellow-400">🟨</span>}
+                        {score.red_card         && <span className="text-[10px] text-red-400">🟥</span>}
+                        {(score.own_goal ?? 0) > 0 && <span className="text-[10px] text-red-400">OG {score.own_goal}</span>}
+                      </>
+                    )
+                  ) : (
+                    <span className="text-[10px] text-gray-600">aguardando jogo</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="text-right shrink-0 min-w-[44px]">
+                {pts !== null ? (
+                  <>
+                    <p className={`text-sm font-bold leading-tight ${pts > 0 ? 'text-emerald-400' : pts < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                      {pts > 0 ? '+' : ''}{pts.toFixed(1)}
+                    </p>
+                    {isCap && <p className="text-[9px] text-orange-400">×2</p>}
+                  </>
+                ) : (
+                  <span className="text-xs text-gray-600">—</span>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {isFinished && (
+        <div className="px-4 py-3 border-t border-gray-800 flex justify-center">
+          <ShareButton
+            title="Meu Cartola · Bolão da Gangue"
+            text={`Fiz ${(totalPoints ?? 0).toFixed(1)} pontos no Cartola da Copa! Bolão da Gangue 🤙`}
+            className="text-gray-500 hover:text-emerald-400"
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Menu de ações ao clicar num slot preenchido
 function SlotActionMenu({ slot, isCaptain, onSetCaptain, onRemove, onClose }) {
   return (
@@ -420,20 +524,16 @@ export default function Cartola() {
         </div>
       )}
 
-      {/* Pontuação se rodada encerrada */}
-      {round.status === 'finished' && myTeam && (
-        <div className="mt-4 bg-emerald-900/20 border border-emerald-700/40 rounded-2xl p-4 text-center">
-          <p className="text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-1">Pontuação da rodada</p>
-          <p className="text-4xl font-black text-white">{myTeam.total_points.toFixed(1)}</p>
-          <p className="text-gray-500 text-xs mt-1">pontos</p>
-          <div className="mt-3 flex justify-center">
-            <ShareButton
-              title="Meu Cartola · Bolão da Gangue"
-              text={`Fiz ${myTeam.total_points.toFixed(1)} pontos no Cartola da Copa! Formação ${formation}. Bolão da Gangue 🤙`}
-              className="text-gray-500 hover:text-emerald-400"
-            />
-          </div>
-        </div>
+      {/* Pontuação parcial (em andamento) ou final (encerrada) */}
+      {(round.status === 'closed' || round.status === 'finished') && myTeam && (
+        <PartialScorePanel
+          selectedPlayers={selectedPlayers}
+          captainSlot={captainSlot}
+          slots={slots}
+          scores={scores ?? {}}
+          totalPoints={myTeam.total_points}
+          isFinished={round.status === 'finished'}
+        />
       )}
 
       {/* Player picker modal */}
