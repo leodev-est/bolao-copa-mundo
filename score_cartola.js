@@ -295,18 +295,25 @@ async function updatePlayerPrices() {
 
 // ── Verifica se a rodada encerrou ───────────────────────────────────────────────
 async function checkRoundCompletion(round) {
-  const { data: unfinished } = await supabase
+  const { data: unfinished, error } = await supabase
     .from('matches')
     .select('id')
     .gte('match_date', round.start_date)
-    .lte('match_date', round.end_date + 'T23:59:59Z')
+    .lte('match_date', round.end_date)   // end_date já é timestamp completo
     .not('status', 'in', '("FT","AET","PEN","CANC")')
+
+  if (error) {
+    console.warn(`  ↳ erro ao verificar conclusão da rodada: ${error.message}`)
+    return
+  }
 
   if (unfinished?.length === 0) {
     console.log(`\n🏁 Rodada "${round.name}" finalizada!`)
     if (!DRY_RUN) {
       await supabase.from('cartola_rounds').update({ status: 'finished' }).eq('id', round.id)
     }
+  } else {
+    console.log(`  ↳ ${unfinished.length} jogo(s) ainda não encerrado(s) na rodada`)
   }
 }
 
