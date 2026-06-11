@@ -5,15 +5,20 @@
 import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'fs'
 
-const env = Object.fromEntries(
-  readFileSync('.env', 'utf-8').split('\n')
-    .filter(l => l.includes('=') && !l.startsWith('#'))
-    .map(l => { const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim()] })
-)
+// Carrega .env localmente; no CI as vars já vêm do ambiente
+try {
+  const raw = readFileSync('.env', 'utf-8')
+  raw.split('\n').filter(l => l.includes('=') && !l.startsWith('#')).forEach(l => {
+    const i = l.indexOf('=')
+    const k = l.slice(0, i).trim()
+    const v = l.slice(i + 1).trim()
+    if (!process.env[k]) process.env[k] = v
+  })
+} catch {}
 
-const SUPABASE_URL = env['VITE_SUPABASE_URL']
-const SUPABASE_KEY = env['SUPABASE_SERVICE_ROLE_KEY']
-const API_KEY      = env['VITE_FOOTBALL_DATA_KEY']
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+const API_KEY      = process.env.VITE_FOOTBALL_DATA_KEY
 const BASE_URL     = 'https://api.football-data.org/v4'
 const COMPETITION  = 'WC'
 const SEASON       = '2026'
