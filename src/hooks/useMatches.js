@@ -36,6 +36,18 @@ async function fetchBetOptions(matchId) {
   return data
 }
 
+async function fetchMatchPlayers(homeTeam, awayTeam) {
+  const { data, error } = await supabase
+    .from('cartola_players')
+    .select('id, name, position, team_name')
+    .in('team_name', [homeTeam, awayTeam])
+    .eq('available', true)
+    .order('position')
+    .order('name')
+  if (error) throw error
+  return data ?? []
+}
+
 export function useMatches() {
   const queryClient = useQueryClient()
 
@@ -84,6 +96,14 @@ export function useMatch(matchId) {
     staleTime: 1000 * 60,
   })
 
+  const match = matchQuery.data
+  const playersQuery = useQuery({
+    queryKey: ['match-players', match?.home_team, match?.away_team],
+    queryFn:  () => fetchMatchPlayers(match.home_team, match.away_team),
+    enabled:  !!match?.home_team && !!match?.away_team,
+    staleTime: 0,
+  })
+
   // Realtime: atualiza placar ao vivo da partida específica
   useEffect(() => {
     if (!matchId) return
@@ -123,6 +143,7 @@ export function useMatch(matchId) {
   return {
     match: matchQuery.data,
     betOptions: optionsQuery.data ?? [],
+    matchPlayers: playersQuery.data ?? [],
     isLoading: matchQuery.isLoading || optionsQuery.isLoading,
     error: matchQuery.error || optionsQuery.error,
   }

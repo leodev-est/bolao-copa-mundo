@@ -43,7 +43,7 @@ function ResultBadge({ result, homeName, awayName }) {
 
 // ─── PlayerList — estilo bet365 ───────────────────────────────────────────────
 
-const POS = { G: 'GOL', D: 'DEF', M: 'MEI', F: 'ATA' }
+const POS = { G: 'GOL', D: 'DEF', M: 'MEI', F: 'ATA', GK: 'GOL', DEF: 'DEF', MID: 'MEI', FWD: 'ATA' }
 
 function PlayerList({ players, maxSlots, selected, onChange, disabled }) {
   const [showSubs, setShowSubs] = useState(false)
@@ -268,7 +268,7 @@ const EXTRA_TYPES = ['total_goals', 'total_yellows']
 export default function Palpite() {
   const { matchId }    = useParams()
   const navigate       = useNavigate()
-  const { match, betOptions, isLoading } = useMatch(matchId)
+  const { match, betOptions, matchPlayers, isLoading } = useMatch(matchId)
   const { data: mainBet }                = useMainBet(matchId)
   const { data: extraBetsData }          = useMatchBets(matchId)
   const placeMainBet  = usePlaceMainBet()
@@ -321,15 +321,20 @@ export default function Palpite() {
   const scoreOdd       = calcExactScoreOdd(homeGoals, awayGoals)
   const extraBetMap    = extraBetsData?.betMap ?? {}
 
-  const homePlayers = betOptions
-    .filter(o => o.type === 'goalscorer' && o.metadata?.team === match.home_team)
-    .sort((a, b) => (a.metadata?.starter === false ? 1 : 0) - (b.metadata?.starter === false ? 1 : 0))
-    .map(o => ({ player_id: o.metadata.player_id, player_name: o.metadata.player_name, pos: o.metadata.pos ?? null, starter: o.metadata.starter ?? true }))
+  // Usa bet_options goalscorer se disponíveis; senão usa cartola_players como fallback
+  const goalscorerOpts = betOptions.filter(o => o.type === 'goalscorer')
+  const fromBetOptions = (team) =>
+    goalscorerOpts
+      .filter(o => o.metadata?.team === team)
+      .sort((a, b) => (a.metadata?.starter === false ? 1 : 0) - (b.metadata?.starter === false ? 1 : 0))
+      .map(o => ({ player_id: o.metadata.player_id, player_name: o.metadata.player_name, pos: o.metadata.pos ?? null, starter: o.metadata.starter ?? true }))
+  const fromCartola = (team) =>
+    matchPlayers
+      .filter(p => p.team_name === team)
+      .map(p => ({ player_id: p.id, player_name: p.name, pos: p.position, starter: true }))
 
-  const awayPlayers = betOptions
-    .filter(o => o.type === 'goalscorer' && o.metadata?.team === match.away_team)
-    .sort((a, b) => (a.metadata?.starter === false ? 1 : 0) - (b.metadata?.starter === false ? 1 : 0))
-    .map(o => ({ player_id: o.metadata.player_id, player_name: o.metadata.player_name, pos: o.metadata.pos ?? null, starter: o.metadata.starter ?? true }))
+  const homePlayers = goalscorerOpts.length > 0 ? fromBetOptions(match.home_team) : fromCartola(match.home_team)
+  const awayPlayers = goalscorerOpts.length > 0 ? fromBetOptions(match.away_team) : fromCartola(match.away_team)
 
   const extraOptions = betOptions.filter(o => EXTRA_TYPES.includes(o.type))
 
