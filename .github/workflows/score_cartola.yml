@@ -46,14 +46,21 @@ jobs:
           VITE_FOOTBALL_DATA_KEY:    ${{ secrets.VITE_FOOTBALL_DATA_KEY }}
         run: node sync.js
 
-      - name: 2 · Resolver palpites das partidas encerradas
+      - name: 2 · Sincronizar escalações (lineup ~1h antes do jogo)
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_FOOTBALL_DATA_KEY:    ${{ secrets.VITE_FOOTBALL_DATA_KEY }}
+        run: node sync_lineups.js
+
+      - name: 3 · Resolver palpites das partidas encerradas
         env:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_FOOTBALL_DATA_KEY:    ${{ secrets.VITE_FOOTBALL_DATA_KEY }}
         run: node resolve_bets.js
 
-      - name: 3 · Pontuar Cartola e ajustar preços
+      - name: 4 · Pontuar Cartola e ajustar preços
         env:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
