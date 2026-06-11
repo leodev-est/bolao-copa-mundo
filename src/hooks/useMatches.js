@@ -39,7 +39,7 @@ async function fetchBetOptions(matchId) {
 async function fetchMatchPlayers(homeTeam, awayTeam) {
   const { data, error } = await supabase
     .from('cartola_players')
-    .select('id, name, position, team_name')
+    .select('id, api_player_id, name, position, team_name')
     .in('team_name', [homeTeam, awayTeam])
     .eq('available', true)
     .order('position')

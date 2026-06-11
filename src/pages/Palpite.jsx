@@ -342,7 +342,7 @@ export default function Palpite() {
   const fromCartola = (team) =>
     matchPlayers
       .filter(p => p.team_name === team)
-      .map(p => ({ player_id: p.id, player_name: p.name, pos: p.position, starter: true }))
+      .map(p => ({ player_id: p.api_player_id ?? null, player_name: p.name, pos: p.position, starter: true }))
 
   const homePlayers = goalscorerOpts.length > 0 ? fromBetOptions(match.home_team) : fromCartola(match.home_team)
   const awayPlayers = goalscorerOpts.length > 0 ? fromBetOptions(match.away_team) : fromCartola(match.away_team)
