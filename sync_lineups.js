@@ -163,25 +163,36 @@ function parseFootballDataLineup(data, match) {
 async function main() {
   console.log(`📋 Sync Lineups — ${new Date().toISOString()}${DRY_RUN ? ' (DRY RUN)' : ''}\n`)
 
-  const now         = new Date()
-  const windowStart = new Date(now.getTime() - 10 * 60 * 1000)   // 10 min atrás
-  const windowEnd   = new Date(now.getTime() + 100 * 60 * 1000)  // 100 min à frente
+  const now       = new Date()
+  // Busca partidas que começam entre 10 min e 75 min a partir de agora
+  // (cobre as 3 janelas de verificação: ~60, ~30, ~15 min antes)
+  const queryStart = new Date(now.getTime() +  10 * 60 * 1000)
+  const queryEnd   = new Date(now.getTime() +  75 * 60 * 1000)
+
+  // Janelas em que realmente chamamos a API (minutos até o kickoff)
+  const CHECK_WINDOWS = [
+    { label: '~60 min', min: 50, max: 70 },
+    { label: '~30 min', min: 20, max: 50 },
+    { label: '~15 min', min:  5, max: 20 },
+  ]
 
   const { data: matches, error } = await supabase
     .from('matches')
     .select('id, api_match_id, api_football_id, home_team, away_team, match_date')
     .eq('status', 'NS')
-    .gte('match_date', windowStart.toISOString())
-    .lte('match_date', windowEnd.toISOString())
+    .gte('match_date', queryStart.toISOString())
+    .lte('match_date', queryEnd.toISOString())
     .order('match_date')
 
   if (error) { console.error('❌ Erro ao buscar partidas:', error.message); return }
-  if (!matches?.length) { console.log('ℹ️  Nenhuma partida próxima na janela de 100 minutos.'); return }
+  if (!matches?.length) { console.log('ℹ️  Nenhuma partida nas próximas 75 minutos.'); return }
 
-  console.log(`🔍 ${matches.length} partida(s) na janela:\n`)
+  console.log(`🔍 ${matches.length} partida(s) próxima(s):\n`)
 
   for (const match of matches) {
-    console.log(`⚽ ${match.home_team} × ${match.away_team} — ${new Date(match.match_date).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' })} BRT`)
+    const minsUntil = Math.round((new Date(match.match_date) - now) / 60000)
+    const kickoffStr = new Date(match.match_date).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    console.log(`⚽ ${match.home_team} × ${match.away_team} — ${kickoffStr} BRT (em ${minsUntil} min)`)
 
     const { count } = await supabase
       .from('bet_options')
@@ -193,6 +204,14 @@ async function main() {
       console.log(`   ✅ Lineup já cadastrado (${count} jogadores)\n`)
       continue
     }
+
+    // Só chama a API nas 3 janelas específicas — evita chamadas desnecessárias
+    const window = CHECK_WINDOWS.find(w => minsUntil >= w.min && minsUntil < w.max)
+    if (!window) {
+      console.log(`   ⏩ Aguardando janela de verificação (${minsUntil} min restantes)\n`)
+      continue
+    }
+    console.log(`   🕐 Janela ${window.label} — buscando lineup...`)
 
     let rows = null
 
