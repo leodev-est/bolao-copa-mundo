@@ -325,7 +325,10 @@ export default function Palpite() {
 
   if (!match) return <div className="text-center py-20 text-gray-400">Partida não encontrada.</div>
 
-  const matchStarted   = LIVE_STATUSES.includes(match.status) || FINISHED_STATUSES.includes(match.status)
+  // Trava no horário do kickoff, independente do sync ainda não ter rodado
+  const matchStarted   = new Date() >= new Date(match.match_date)
+                      || LIVE_STATUSES.includes(match.status)
+                      || FINISHED_STATUSES.includes(match.status)
   const statusInfo     = STATUS_LABELS[match.status] ?? { label: match.status, color: 'gray' }
   const matchDate      = new Date(match.match_date)
   const predictedResult = deriveResult(homeGoals, awayGoals)
@@ -357,7 +360,7 @@ export default function Palpite() {
 
   const handleConfirmMain = async () => {
     try {
-      await placeMainBet.mutateAsync({ matchId, scoreHome: homeGoals, scoreAway: awayGoals, scorers: scorersWithGlobalIdx })
+      await placeMainBet.mutateAsync({ matchId, matchDate: match.match_date, scoreHome: homeGoals, scoreAway: awayGoals, scorers: scorersWithGlobalIdx })
       setSuccess('Palpite salvo!')
       setTimeout(() => setSuccess(''), 3000)
     } catch (err) {

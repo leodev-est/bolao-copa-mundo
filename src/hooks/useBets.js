@@ -106,7 +106,10 @@ export function usePlaceMainBet() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ matchId, scoreHome, scoreAway, scorers = [] }) => {
+    mutationFn: async ({ matchId, matchDate, scoreHome, scoreAway, scorers = [] }) => {
+      if (matchDate && new Date() >= new Date(matchDate)) {
+        throw new Error('Palpites encerrados — o jogo já começou.')
+      }
       const predictedResult = deriveResult(scoreHome, scoreAway)
       const odd = calcExactScoreOdd(scoreHome, scoreAway)
 
