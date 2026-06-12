@@ -325,10 +325,26 @@ export default function Palpite() {
 
   if (!match) return <div className="text-center py-20 text-gray-400">Partida não encontrada.</div>
 
-  // Trava no horário do kickoff, independente do sync ainda não ter rodado
-  const matchStarted   = new Date() >= new Date(match.match_date)
-                      || LIVE_STATUSES.includes(match.status)
-                      || FINISHED_STATUSES.includes(match.status)
+  const GRACE_MINS = 15
+  const hasOfficialLineup = goalscorerOpts.length > 0
+  const gracePeriodEnd    = new Date(new Date(match.match_date).getTime() + GRACE_MINS * 60 * 1000)
+  const nowTime           = new Date()
+  const isFinished        = FINISHED_STATUSES.includes(match.status)
+
+  // Carência: jogo iniciou, sem escalação confirmada, ainda dentro dos 15 min
+  const inGracePeriod = !hasOfficialLineup
+    && !isFinished
+    && nowTime >= new Date(match.match_date)
+    && nowTime < gracePeriodEnd
+
+  const graceRemainingMin = inGracePeriod ? Math.ceil((gracePeriodEnd - nowTime) / 60000) : 0
+
+  // Trava no kickoff se escalação chegou; 15 min de carência se não chegou
+  const matchStarted = isFinished || (
+    !inGracePeriod && (
+      nowTime >= new Date(match.match_date) || LIVE_STATUSES.includes(match.status)
+    )
+  )
   const statusInfo     = STATUS_LABELS[match.status] ?? { label: match.status, color: 'gray' }
   const matchDate      = new Date(match.match_date)
   const predictedResult = deriveResult(homeGoals, awayGoals)
@@ -360,7 +376,7 @@ export default function Palpite() {
 
   const handleConfirmMain = async () => {
     try {
-      await placeMainBet.mutateAsync({ matchId, matchDate: match.match_date, scoreHome: homeGoals, scoreAway: awayGoals, scorers: scorersWithGlobalIdx })
+      await placeMainBet.mutateAsync({ matchId, matchDate: match.match_date, hasLineup: hasOfficialLineup, scoreHome: homeGoals, scoreAway: awayGoals, scorers: scorersWithGlobalIdx })
       setSuccess('Palpite salvo!')
       setTimeout(() => setSuccess(''), 3000)
     } catch (err) {
@@ -415,13 +431,21 @@ export default function Palpite() {
       {/* Feedback ao vivo */}
       <LiveBetFeedback match={match} mainBet={mainBet} />
 
-      {matchStarted && !LIVE_STATUSES.includes(match.status) && (
+      {inGracePeriod && (
+        <div className="flex items-center gap-3 p-4 bg-amber-900/20 border border-amber-700/30 rounded-xl mb-6">
+          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+          <p className="text-amber-400 text-sm font-semibold">
+            Jogo iniciado sem escalação confirmada — palpites abertos por mais {graceRemainingMin} min
+          </p>
+        </div>
+      )}
+      {matchStarted && !LIVE_STATUSES.includes(match.status) && !inGracePeriod && (
         <div className="flex items-center gap-3 p-4 bg-yellow-900/20 border border-yellow-700/30 rounded-xl mb-6">
           <AlertTriangle className="w-5 h-5 text-yellow-500 shrink-0" />
           <p className="text-yellow-400 text-sm font-semibold">Palpites encerrados — o jogo já iniciou.</p>
         </div>
       )}
-      {LIVE_STATUSES.includes(match.status) && (
+      {LIVE_STATUSES.includes(match.status) && !inGracePeriod && (
         <div className="flex items-center gap-3 p-4 bg-red-900/20 border border-red-700/30 rounded-xl mb-6">
           <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
           <p className="text-red-400 text-sm font-semibold">Jogo ao vivo — palpites encerrados.</p>

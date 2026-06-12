@@ -106,9 +106,15 @@ export function usePlaceMainBet() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ matchId, matchDate, scoreHome, scoreAway, scorers = [] }) => {
-      if (matchDate && new Date() >= new Date(matchDate)) {
-        throw new Error('Palpites encerrados — o jogo já começou.')
+    mutationFn: async ({ matchId, matchDate, hasLineup = true, scoreHome, scoreAway, scorers = [] }) => {
+      if (matchDate) {
+        const graceMs  = hasLineup ? 0 : 15 * 60 * 1000
+        const lockTime = new Date(new Date(matchDate).getTime() + graceMs)
+        if (new Date() >= lockTime) {
+          throw new Error(hasLineup
+            ? 'Palpites encerrados — o jogo já começou.'
+            : 'Palpites encerrados — passou o período de carência.')
+        }
       }
       const predictedResult = deriveResult(scoreHome, scoreAway)
       const odd = calcExactScoreOdd(scoreHome, scoreAway)

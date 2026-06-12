@@ -1,8 +1,9 @@
 /**
  * Busca escalações confirmadas e popula bet_options (goalscorer).
- * Fonte principal: API-Football (api-sports.io) via api_football_id.
- * Fallback: football-data.org via api_match_id.
- * A API libera o lineup ~1h antes do kickoff.
+ * Fonte: ESPN API não-oficial (sem auth, sem chave).
+ *
+ * Além das partidas próximas, faz sync retroativo para jogos nas
+ * últimas 72h que ainda não têm lineup salvo.
  *
  * Uso: node sync_lineups.js
  * Uso dry-run: node sync_lineups.js --dry-run
@@ -24,20 +25,27 @@ try {
 const DRY_RUN  = process.argv.includes('--dry-run')
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
-const AF_KEY  = process.env.VITE_API_FOOTBALL_KEY ?? process.env.API_FOOTBALL_KEY
-const AF_BASE = 'https://v3.football.api-sports.io'
+const ESPN_BASE    = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world'
+const ESPN_HEADERS = { 'User-Agent': 'Mozilla/5.0' }
 
-const FD_KEY  = process.env.VITE_FOOTBALL_DATA_KEY
-const FD_BASE = 'https://api.football-data.org/v4'
-
-// Posições da football-data.org → código curto (fallback)
-const FD_POS_MAP = {
-  Goalkeeper: 'G',
-  Defence: 'D', 'Centre-Back': 'D', 'Left-Back': 'D', 'Right-Back': 'D', Defender: 'D',
-  Midfield: 'M', 'Central Midfield': 'M', 'Defensive Midfield': 'M',
-  'Attacking Midfield': 'M', Midfielder: 'M',
-  Offence: 'F', 'Centre-Forward': 'F', 'Left Winger': 'F',
-  'Right Winger': 'F', Attacker: 'F', Forward: 'F',
+// Posições ESPN → código curto (G/D/M/F)
+const ESPN_POS_MAP = {
+  'Goalkeeper': 'G',
+  'Left Back': 'D', 'Right Back': 'D',
+  'Center Back': 'D', 'Centre Back': 'D',
+  'Left Center Back': 'D', 'Right Center Back': 'D',
+  'Center Right Back': 'D', 'Center Left Back': 'D',
+  'Sweeper': 'D', 'Defender': 'D',
+  'Central Midfielder': 'M', 'Centre Midfielder': 'M',
+  'Defensive Midfielder': 'M', 'Attacking Midfielder': 'M',
+  'Left Midfielder': 'M', 'Right Midfielder': 'M',
+  'Left Center Midfielder': 'M', 'Right Center Midfielder': 'M',
+  'Left Attacking Midfielder': 'M', 'Right Attacking Midfielder': 'M',
+  'Midfielder': 'M',
+  'Forward': 'F', 'Centre Forward': 'F', 'Center Forward': 'F',
+  'Left Wing': 'F', 'Right Wing': 'F',
+  'Left Winger': 'F', 'Right Winger': 'F',
+  'Striker': 'F', 'Second Striker': 'F', 'Attacker': 'F',
 }
 
 const BASE_ODD = { G: 35.0, D: 12.0, M: 6.5, F: 3.5 }
@@ -51,126 +59,166 @@ function norm(s) { return s.toLowerCase().normalize('NFD').replace(/[^a-z]/g, ''
 
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
 
-// ─── API-Football ──────────────────────────────────────────────────────────────
+// ESPN usa nomes diferentes: "Korea Republic" vs "South Korea", "Bosnia-Herzegovina" vs nosso DB.
+// Verifica se alguma palavra ≥4 chars do nome ESPN aparece no nome do DB.
+function teamsMatch(espnName, dbName) {
+  const en = norm(espnName)
+  const dn = norm(dbName)
+  if (en === dn || en.includes(dn) || dn.includes(en)) return true
+  const parts = espnName.toLowerCase().split(/[\s\-\/&]+/)
+  return parts.some(p => p.length >= 4 && dn.includes(norm(p)))
+}
 
-async function fetchApiFootballLineup(fixtureId) {
+// ─── ESPN: descoberta de event ID ─────────────────────────────────────────────
+
+async function findEspnEventId(match) {
+  const d = new Date(match.match_date)
+  const dateStr = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`
+
   try {
-    const res = await fetch(`${AF_BASE}/fixtures/lineups?fixture=${fixtureId}`, {
-      headers: { 'x-apisports-key': AF_KEY },
-    })
-    if (!res.ok) { console.log(`   ⚠️  API-Football retornou ${res.status}`); return null }
-    const json = await res.json()
-    return json.response ?? []
+    const res = await fetch(`${ESPN_BASE}/scoreboard?dates=${dateStr}`, { headers: ESPN_HEADERS })
+    if (!res.ok) { console.log(`   ⚠️  ESPN scoreboard ${res.status}`); return null }
+    const data = await res.json()
+
+    for (const event of (data.events ?? [])) {
+      const comp     = event.competitions?.[0]
+      const homeComp = comp?.competitors?.find(c => c.homeAway === 'home')
+      const awayComp = comp?.competitors?.find(c => c.homeAway === 'away')
+      if (!homeComp || !awayComp) continue
+
+      if (
+        teamsMatch(homeComp.team.displayName, match.home_team) &&
+        teamsMatch(awayComp.team.displayName, match.away_team)
+      ) {
+        return event.id
+      }
+    }
+
+    console.log(`   ⚠️  Jogo não encontrado no ESPN para ${dateStr}`)
+    return null
   } catch (err) {
-    console.log(`   ❌ Erro API-Football: ${err.message}`)
+    console.log(`   ❌ ESPN scoreboard: ${err.message}`)
     return null
   }
 }
 
-function parseApiFootballLineup(lineupResponse, match) {
-  const rows = []
+// ─── ESPN: busca e parse do lineup ────────────────────────────────────────────
 
-  for (const teamEntry of lineupResponse) {
-    const apiName = teamEntry.team?.name ?? ''
-    const apiNorm = norm(apiName)
+async function fetchEspnLineup(espnId, match) {
+  try {
+    const res = await fetch(`${ESPN_BASE}/summary?event=${espnId}`, { headers: ESPN_HEADERS })
+    if (!res.ok) { console.log(`   ⚠️  ESPN summary ${res.status}`); return null }
+    const data = await res.json()
 
-    // Identifica se é home ou away pelo nome do time
-    let team
-    if (apiNorm.includes(norm(match.home_team)) || norm(match.home_team).includes(apiNorm)) {
-      team = match.home_team
-    } else if (apiNorm.includes(norm(match.away_team)) || norm(match.away_team).includes(apiNorm)) {
-      team = match.away_team
-    } else {
-      console.log(`   ⚠️  Time não reconhecido: "${apiName}" (esperado: ${match.home_team} / ${match.away_team})`)
-      // Tenta pelo índice: primeiro = home, segundo = away
-      const idx = lineupResponse.indexOf(teamEntry)
-      team = idx === 0 ? match.home_team : match.away_team
-      console.log(`   ↳ Assumindo: ${team} (posição ${idx})`)
+    const rosters = data.rosters ?? []
+    if (rosters.length === 0) {
+      console.log('   ⏳ ESPN: escalação ainda não disponível')
+      return null
     }
 
-    const groups = [
-      { players: teamEntry.startXI    ?? [], starter: true  },
-      { players: teamEntry.substitutes ?? [], starter: false },
-    ]
+    const rows = []
+    for (const roster of rosters) {
+      const espnTeam = roster.team?.displayName ?? ''
+      const isHome   = teamsMatch(espnTeam, match.home_team)
+      const team     = isHome ? match.home_team : match.away_team
 
-    for (const { players, starter } of groups) {
-      for (const entry of players) {
-        const p   = entry.player
-        const pos = p.pos ?? 'M'  // API-Football já retorna G/D/M/F
+      for (const p of (roster.roster ?? [])) {
+        const posLabel = p.position?.displayName ?? ''
+        const pos      = ESPN_POS_MAP[posLabel] ?? 'M'
+        const starter  = p.starter ?? false
         rows.push({
           match_id:    match.id,
           type:        'goalscorer',
-          description: `${p.name} marca gol`,
+          description: `${p.athlete.displayName} marca gol`,
           odd:         calcOdd(pos, starter),
-          metadata: { player_id: p.id, player_name: p.name, team, pos, starter },
+          metadata: {
+            player_id:   parseInt(p.athlete.id),
+            player_name: p.athlete.displayName,
+            team,
+            pos,
+            starter,
+          },
         })
       }
     }
-  }
 
-  return rows
-}
-
-// ─── Football-data.org (fallback) ─────────────────────────────────────────────
-
-async function fetchFootballDataLineup(apiMatchId) {
-  try {
-    const res = await fetch(`${FD_BASE}/matches/${apiMatchId}`, {
-      headers: { 'X-Auth-Token': FD_KEY },
-    })
-    if (!res.ok) { console.log(`   ⚠️  football-data.org retornou ${res.status}`); return null }
-    return await res.json()
+    return rows.length > 0 ? rows : null
   } catch (err) {
-    console.log(`   ❌ Erro football-data.org: ${err.message}`)
+    console.log(`   ❌ ESPN summary: ${err.message}`)
     return null
   }
 }
 
-function parseFootballDataLineup(data, match) {
-  const homeLineup = data.homeTeam?.lineup ?? []
-  const homeBench  = data.homeTeam?.bench  ?? []
-  const awayLineup = data.awayTeam?.lineup ?? []
-  const awayBench  = data.awayTeam?.bench  ?? []
+// ─── Processa um jogo ──────────────────────────────────────────────────────────
 
-  if (homeLineup.length === 0) return null
+async function processMatch(match, label) {
+  const kickoffStr = new Date(match.match_date).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+  const tag = label ? ` (${label})` : ''
+  console.log(`⚽ ${match.home_team} × ${match.away_team} — ${kickoffStr} BRT${tag}`)
 
-  const rows = []
-  const groups = [
-    { team: match.home_team, players: homeLineup, starter: true  },
-    { team: match.home_team, players: homeBench,  starter: false },
-    { team: match.away_team, players: awayLineup, starter: true  },
-    { team: match.away_team, players: awayBench,  starter: false },
-  ]
+  const { count } = await supabase
+    .from('bet_options')
+    .select('id', { count: 'exact', head: true })
+    .eq('match_id', match.id)
+    .eq('type', 'goalscorer')
 
-  for (const { team, players, starter } of groups) {
-    for (const player of players) {
-      const pos = FD_POS_MAP[player.position] ?? 'M'
-      rows.push({
-        match_id:    match.id,
-        type:        'goalscorer',
-        description: `${player.name} marca gol`,
-        odd:         calcOdd(pos, starter),
-        metadata: { player_id: player.id, player_name: player.name, team, pos, starter },
-      })
-    }
+  if (count > 0) {
+    console.log(`   ✅ Lineup já cadastrado (${count} jogadores)\n`)
+    return
   }
 
-  return rows
+  // Garante ESPN event ID
+  let espnId = match.espn_event_id
+  if (!espnId) {
+    console.log('   🔍 Buscando ESPN event ID...')
+    espnId = await findEspnEventId(match)
+    if (espnId) {
+      console.log(`   🔗 ESPN event ID encontrado: ${espnId}`)
+      if (!DRY_RUN) {
+        await supabase.from('matches').update({ espn_event_id: espnId }).eq('id', match.id)
+      }
+    } else {
+      console.log('   ❌ ESPN event ID não encontrado\n')
+      return
+    }
+  } else {
+    console.log(`   🔗 ESPN event ID: ${espnId}`)
+  }
+
+  const rows = await fetchEspnLineup(espnId, match)
+  if (!rows) { console.log(''); return }
+
+  const starters = rows.filter(r => r.metadata.starter).length
+  const subs     = rows.filter(r => !r.metadata.starter).length
+  console.log(`   📋 ${starters} titulares + ${subs} reservas`)
+
+  if (DRY_RUN) {
+    console.log(`   🔬 DRY RUN — ${rows.length} entradas NÃO salvas\n`)
+    return
+  }
+
+  await supabase.from('bet_options').delete().eq('match_id', match.id).eq('type', 'goalscorer')
+
+  const { error } = await supabase.from('bet_options').insert(rows)
+  if (error) {
+    console.error(`   ❌ Erro ao salvar: ${error.message}\n`)
+  } else {
+    await supabase.from('matches').update({ has_lineup: true }).eq('id', match.id)
+    console.log(`   💾 ${rows.length} jogadores salvos em bet_options\n`)
+  }
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log(`📋 Sync Lineups — ${new Date().toISOString()}${DRY_RUN ? ' (DRY RUN)' : ''}\n`)
+  console.log(`📋 Sync Lineups (ESPN) — ${new Date().toISOString()}${DRY_RUN ? ' (DRY RUN)' : ''}\n`)
 
-  const now       = new Date()
-  // Busca partidas que começam entre 10 min e 75 min a partir de agora
-  // (cobre as 3 janelas de verificação: ~60, ~30, ~15 min antes)
-  const queryStart = new Date(now.getTime() +  10 * 60 * 1000)
+  const now = new Date()
+
+  // Janelas de verificação antes do kickoff
+  const queryStart = new Date(now.getTime() +   5 * 60 * 1000)
   const queryEnd   = new Date(now.getTime() +  75 * 60 * 1000)
 
-  // Janelas em que realmente chamamos a API (minutos até o kickoff)
-  // Cada janela tem ≥10 min de largura para garantir que o cron de 10 min sempre acerta
   const CHECK_WINDOWS = [
     { label: '~60 min', min: 50, max: 70 },
     { label: '~30 min', min: 25, max: 50 },
@@ -179,99 +227,69 @@ async function main() {
     { label: '~5 min',  min:  1, max:  6 },
   ]
 
-  const { data: matches, error } = await supabase
+  // ── 1. Partidas próximas (NS) ─────────────────────────────────────────────
+  const { data: upcoming = [], error: e1 } = await supabase
     .from('matches')
-    .select('id, api_match_id, api_football_id, home_team, away_team, match_date')
+    .select('id, home_team, away_team, match_date, espn_event_id')
     .eq('status', 'NS')
     .gte('match_date', queryStart.toISOString())
     .lte('match_date', queryEnd.toISOString())
     .order('match_date')
 
-  if (error) { console.error('❌ Erro ao buscar partidas:', error.message); return }
-  if (!matches?.length) { console.log('ℹ️  Nenhuma partida nas próximas 75 minutos.'); return }
+  if (e1) console.error('Erro ao buscar próximas:', e1.message)
 
-  console.log(`🔍 ${matches.length} partida(s) próxima(s):\n`)
+  // ── 2. Partidas recentes sem lineup (retroativo: últimas 72h) ─────────────
+  const since72h = new Date(now.getTime() - 72 * 60 * 60 * 1000)
 
-  for (const match of matches) {
-    const minsUntil = Math.round((new Date(match.match_date) - now) / 60000)
-    const kickoffStr = new Date(match.match_date).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' })
-    console.log(`⚽ ${match.home_team} × ${match.away_team} — ${kickoffStr} BRT (em ${minsUntil} min)`)
+  const { data: withLineup = [] } = await supabase
+    .from('bet_options')
+    .select('match_id')
+    .eq('type', 'goalscorer')
 
-    const { count } = await supabase
-      .from('bet_options')
-      .select('id', { count: 'exact', head: true })
-      .eq('match_id', match.id)
-      .eq('type', 'goalscorer')
+  const matchIdsWithLineup = new Set(withLineup.map(r => r.match_id))
 
-    if (count > 0) {
-      console.log(`   ✅ Lineup já cadastrado (${count} jogadores)\n`)
-      continue
-    }
+  const { data: recentMatches = [], error: e2 } = await supabase
+    .from('matches')
+    .select('id, home_team, away_team, match_date, espn_event_id')
+    .in('status', ['FT', 'AET', 'PEN', '1H', 'HT', '2H', 'ET', 'BT'])
+    .gte('match_date', since72h.toISOString())
+    .order('match_date', { ascending: false })
 
-    // Só chama a API nas 3 janelas específicas — evita chamadas desnecessárias
-    const window = CHECK_WINDOWS.find(w => minsUntil >= w.min && minsUntil < w.max)
-    if (!window) {
-      console.log(`   ⏩ Aguardando janela de verificação (${minsUntil} min restantes)\n`)
-      continue
-    }
-    console.log(`   🕐 Janela ${window.label} — buscando lineup...`)
+  if (e2) console.error('Erro ao buscar recentes:', e2.message)
 
-    let rows = null
+  const retroMatches = recentMatches.filter(m => !matchIdsWithLineup.has(m.id))
 
-    // ── Fonte principal: API-Football ──────────────────────────────────────────
-    if (match.api_football_id && AF_KEY) {
-      console.log(`   🔗 API-Football (fixture #${match.api_football_id})...`)
-      const response = await fetchApiFootballLineup(match.api_football_id)
-      await sleep(1200)  // limite: ~50 req/min no plano free
-
-      if (response && response.length > 0) {
-        const parsed = parseApiFootballLineup(response, match)
-        if (parsed.length > 0) {
-          rows = parsed
-          const starters = rows.filter(r => r.metadata.starter).length
-          const subs     = rows.filter(r => !r.metadata.starter).length
-          console.log(`   📋 ${starters} titulares + ${subs} reservas (API-Football)`)
-        } else {
-          console.log('   ⏳ Lineup ainda não publicado pela API-Football')
-        }
+  // ── Processa próximas ─────────────────────────────────────────────────────
+  if (upcoming.length > 0) {
+    console.log(`🔍 ${upcoming.length} partida(s) nas próximas 75 min:\n`)
+    for (const match of upcoming) {
+      const minsUntil = Math.round((new Date(match.match_date) - now) / 60000)
+      const window    = CHECK_WINDOWS.find(w => minsUntil >= w.min && minsUntil < w.max)
+      if (!window) {
+        const kick = new Date(match.match_date).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+        console.log(`⚽ ${match.home_team} × ${match.away_team} — ${kick} BRT`)
+        console.log(`   ⏩ Fora da janela (${minsUntil} min)\n`)
+        continue
       }
+      await processMatch(match, window.label)
+      await sleep(300)
     }
-
-    // ── Fallback: football-data.org ─────────────────────────────────────────────
-    if (!rows && match.api_match_id && FD_KEY) {
-      console.log(`   🔗 Fallback football-data.org (match #${match.api_match_id})...`)
-      const data = await fetchFootballDataLineup(match.api_match_id)
-      await sleep(6500)  // limite: 10 req/min no plano free
-
-      if (data) {
-        const parsed = parseFootballDataLineup(data, match)
-        if (parsed) {
-          rows = parsed
-          console.log(`   📋 ${rows.filter(r => r.metadata.starter).length} titulares (football-data.org)`)
-        } else {
-          console.log('   ⏳ Lineup ainda não publicado pela football-data.org')
-        }
-      }
-    }
-
-    if (!rows || rows.length === 0) { console.log(''); continue }
-
-    if (DRY_RUN) {
-      console.log(`   🔬 DRY RUN — ${rows.length} entradas NÃO salvas\n`)
-      continue
-    }
-
-    await supabase.from('bet_options').delete().eq('match_id', match.id).eq('type', 'goalscorer')
-
-    const { error: insertErr } = await supabase.from('bet_options').insert(rows)
-    if (insertErr) {
-      console.error(`   ❌ Erro ao salvar: ${insertErr.message}\n`)
-    } else {
-      console.log(`   💾 ${rows.length} jogadores salvos em bet_options\n`)
-    }
+  } else {
+    console.log('ℹ️  Nenhuma partida nas próximas 75 minutos.\n')
   }
 
-  console.log('✅ Sync de lineups concluído.')
+  // ── Processa retroativos ──────────────────────────────────────────────────
+  if (retroMatches.length > 0) {
+    console.log(`🔄 ${retroMatches.length} jogo(s) recente(s) sem lineup (retroativo):\n`)
+    for (const match of retroMatches) {
+      await processMatch(match, 'retroativo')
+      await sleep(300)
+    }
+  } else {
+    console.log('ℹ️  Nenhum jogo recente sem lineup.')
+  }
+
+  console.log('\n✅ Sync de lineups concluído.')
 }
 
 main().catch(err => { console.error('❌', err.message); process.exit(1) })

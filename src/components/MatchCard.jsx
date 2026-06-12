@@ -98,10 +98,18 @@ function CardContent({ match, isLocked }) {
   )
 }
 
+const GRACE_MS = 15 * 60 * 1000
+
 export default function MatchCard({ match }) {
   const isLive     = LIVE_STATUSES.includes(match.status)
   const isFinished = FINISHED_STATUSES.includes(match.status)
-  const isLocked   = new Date() >= new Date(match.match_date) || isLive || isFinished
+
+  // Se não tem escalação confirmada: 15 min de carência após o kickoff
+  // Se tem escalação: trava no horário do kickoff (normal)
+  const gracePeriodEnd = new Date(new Date(match.match_date).getTime() + GRACE_MS)
+  const isLocked = isFinished
+    || (match.has_lineup  && (new Date() >= new Date(match.match_date) || isLive))
+    || (!match.has_lineup && new Date() >= gracePeriodEnd)
 
   if (isLocked) {
     return (
