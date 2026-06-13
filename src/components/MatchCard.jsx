@@ -98,7 +98,7 @@ function CardContent({ match, isLocked }) {
   )
 }
 
-const GRACE_MS = 15 * 60 * 1000
+const GRACE_MS = 20 * 60 * 1000
 
 export default function MatchCard({ match }) {
   const isLive     = LIVE_STATUSES.includes(match.status)

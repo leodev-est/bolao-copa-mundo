@@ -328,7 +328,7 @@ export default function Palpite() {
   // Usa bet_options goalscorer se disponíveis; senão usa cartola_players como fallback
   const goalscorerOpts = betOptions.filter(o => o.type === 'goalscorer')
 
-  const GRACE_MINS = 15
+  const GRACE_MINS = 20
   const hasOfficialLineup = goalscorerOpts.length > 0
   const gracePeriodEnd    = new Date(new Date(match.match_date).getTime() + GRACE_MINS * 60 * 1000)
   const nowTime           = new Date()
