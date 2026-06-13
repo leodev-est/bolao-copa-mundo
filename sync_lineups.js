@@ -229,7 +229,7 @@ async function main() {
   const queryEnd   = new Date(now.getTime() +  75 * 60 * 1000)
 
   const CHECK_WINDOWS = [
-    { label: '~60 min', min: 50, max: 70 },
+    { label: '~60 min', min: 50, max: 80 },
     { label: '~30 min', min: 25, max: 50 },
     { label: '~15 min', min: 13, max: 25 },
     { label: '~10 min', min:  6, max: 13 },
