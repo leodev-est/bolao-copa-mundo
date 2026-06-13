@@ -71,35 +71,44 @@ function teamsMatch(espnName, dbName) {
 
 // ─── ESPN: descoberta de event ID ─────────────────────────────────────────────
 
+function espnDateStr(date) {
+  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, '0')}${String(date.getUTCDate()).padStart(2, '0')}`
+}
+
 async function findEspnEventId(match) {
   const d = new Date(match.match_date)
-  const dateStr = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`
 
-  try {
-    const res = await fetch(`${ESPN_BASE}/scoreboard?dates=${dateStr}`, { headers: ESPN_HEADERS })
-    if (!res.ok) { console.log(`   ⚠️  ESPN scoreboard ${res.status}`); return null }
-    const data = await res.json()
+  // ESPN organiza os jogos pelo fuso ET (UTC-4). Um jogo às 02:00 UTC Jun 12
+  // aparece no scoreboard de Jun 11 (22:00 ET). Tentamos a data UTC e o dia anterior.
+  const candidates = [d, new Date(d.getTime() - 24 * 60 * 60 * 1000)]
 
-    for (const event of (data.events ?? [])) {
-      const comp     = event.competitions?.[0]
-      const homeComp = comp?.competitors?.find(c => c.homeAway === 'home')
-      const awayComp = comp?.competitors?.find(c => c.homeAway === 'away')
-      if (!homeComp || !awayComp) continue
+  for (const candidate of candidates) {
+    const dateStr = espnDateStr(candidate)
+    try {
+      const res = await fetch(`${ESPN_BASE}/scoreboard?dates=${dateStr}`, { headers: ESPN_HEADERS })
+      if (!res.ok) continue
+      const data = await res.json()
 
-      if (
-        teamsMatch(homeComp.team.displayName, match.home_team) &&
-        teamsMatch(awayComp.team.displayName, match.away_team)
-      ) {
-        return event.id
+      for (const event of (data.events ?? [])) {
+        const comp     = event.competitions?.[0]
+        const homeComp = comp?.competitors?.find(c => c.homeAway === 'home')
+        const awayComp = comp?.competitors?.find(c => c.homeAway === 'away')
+        if (!homeComp || !awayComp) continue
+
+        if (
+          teamsMatch(homeComp.team.displayName, match.home_team) &&
+          teamsMatch(awayComp.team.displayName, match.away_team)
+        ) {
+          return event.id
+        }
       }
+    } catch (err) {
+      console.log(`   ❌ ESPN scoreboard ${dateStr}: ${err.message}`)
     }
-
-    console.log(`   ⚠️  Jogo não encontrado no ESPN para ${dateStr}`)
-    return null
-  } catch (err) {
-    console.log(`   ❌ ESPN scoreboard: ${err.message}`)
-    return null
   }
+
+  console.log(`   ⚠️  Jogo não encontrado no ESPN (tentou ${candidates.map(espnDateStr).join(' e ')})`)
+  return null
 }
 
 // ─── ESPN: busca e parse do lineup ────────────────────────────────────────────
