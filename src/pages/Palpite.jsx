@@ -334,9 +334,8 @@ export default function Palpite() {
   const nowTime           = new Date()
   const isFinished        = FINISHED_STATUSES.includes(match.status)
 
-  // Carência: jogo iniciou, sem escalação confirmada, ainda dentro dos 15 min
-  const inGracePeriod = !hasOfficialLineup
-    && !isFinished
+  // Carência: sempre aberto nos primeiros 20 min (escalação pode ter chegado tarde)
+  const inGracePeriod = !isFinished
     && nowTime >= new Date(match.match_date)
     && nowTime < gracePeriodEnd
 
