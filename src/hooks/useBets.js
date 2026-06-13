@@ -108,12 +108,9 @@ export function usePlaceMainBet() {
   return useMutation({
     mutationFn: async ({ matchId, matchDate, hasLineup = true, scoreHome, scoreAway, scorers = [] }) => {
       if (matchDate) {
-        const graceMs  = hasLineup ? 0 : 15 * 60 * 1000
-        const lockTime = new Date(new Date(matchDate).getTime() + graceMs)
+        const lockTime = new Date(new Date(matchDate).getTime() + 20 * 60 * 1000)
         if (new Date() >= lockTime) {
-          throw new Error(hasLineup
-            ? 'Palpites encerrados — o jogo já começou.'
-            : 'Palpites encerrados — passou o período de carência.')
+          throw new Error('Palpites encerrados — passou os 20 min de jogo.')
         }
       }
       const predictedResult = deriveResult(scoreHome, scoreAway)
