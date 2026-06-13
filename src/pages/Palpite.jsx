@@ -325,6 +325,9 @@ export default function Palpite() {
 
   if (!match) return <div className="text-center py-20 text-gray-400">Partida não encontrada.</div>
 
+  // Usa bet_options goalscorer se disponíveis; senão usa cartola_players como fallback
+  const goalscorerOpts = betOptions.filter(o => o.type === 'goalscorer')
+
   const GRACE_MINS = 15
   const hasOfficialLineup = goalscorerOpts.length > 0
   const gracePeriodEnd    = new Date(new Date(match.match_date).getTime() + GRACE_MINS * 60 * 1000)
@@ -350,9 +353,6 @@ export default function Palpite() {
   const predictedResult = deriveResult(homeGoals, awayGoals)
   const scoreOdd       = calcExactScoreOdd(homeGoals, awayGoals)
   const extraBetMap    = extraBetsData?.betMap ?? {}
-
-  // Usa bet_options goalscorer se disponíveis; senão usa cartola_players como fallback
-  const goalscorerOpts = betOptions.filter(o => o.type === 'goalscorer')
   const fromBetOptions = (team) =>
     goalscorerOpts
       .filter(o => o.metadata?.team === team)
