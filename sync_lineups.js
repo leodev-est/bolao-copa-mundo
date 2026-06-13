@@ -26,7 +26,17 @@ const DRY_RUN  = process.argv.includes('--dry-run')
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 const ESPN_BASE    = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world'
-const ESPN_HEADERS = { 'User-Agent': 'Mozilla/5.0' }
+const ESPN_HEADERS = {
+  'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  'Accept':          'application/json, text/plain, */*',
+  'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Origin':          'https://www.espn.com',
+  'Referer':         'https://www.espn.com/',
+  'sec-fetch-dest':  'empty',
+  'sec-fetch-mode':  'cors',
+  'sec-fetch-site':  'same-site',
+}
 
 // Posições ESPN → código curto (G/D/M/F)
 const ESPN_POS_MAP = {
@@ -120,7 +130,10 @@ async function fetchEspnLineup(espnId, match) {
     const data = await res.json()
 
     const rosters = data.rosters ?? []
-    if (rosters.length === 0) {
+    const totalPlayers = rosters.reduce((s, r) => s + (r.roster?.length ?? 0), 0)
+    console.log(`   📊 ESPN: ${rosters.length} times, ${totalPlayers} jogadores totais`)
+
+    if (rosters.length === 0 || totalPlayers === 0) {
       console.log('   ⏳ ESPN: escalação ainda não disponível')
       return null
     }
@@ -257,10 +270,11 @@ async function main() {
 
   const matchIdsWithLineup = new Set(withLineup.map(r => r.match_id))
 
+  // Inclui NS cujo kickoff já passou (status ainda não atualizado pelo sync.js)
   const { data: recentMatches = [], error: e2 } = await supabase
     .from('matches')
     .select('id, home_team, away_team, match_date, espn_event_id')
-    .in('status', ['FT', 'AET', 'PEN', '1H', 'HT', '2H', 'ET', 'BT'])
+    .or('status.in.(FT,AET,PEN,1H,HT,2H,ET,BT),and(status.eq.NS,match_date.lte.' + now.toISOString() + ')')
     .gte('match_date', since72h.toISOString())
     .order('match_date', { ascending: false })
 
