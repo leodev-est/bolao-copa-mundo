@@ -124,15 +124,30 @@ async function findEspnEventId(match) {
 // ─── ESPN: busca e parse do lineup ────────────────────────────────────────────
 
 async function fetchEspnLineup(espnId, match) {
+  const MAX_ATTEMPTS = 3
+  let rosters = []
+  let totalPlayers = 0
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(`${ESPN_BASE}/summary?event=${espnId}`, { headers: ESPN_HEADERS })
+      if (!res.ok) { console.log(`   ⚠️  ESPN summary ${res.status} (tentativa ${attempt})`); break }
+      const data = await res.json()
+      rosters = data.rosters ?? []
+      totalPlayers = rosters.reduce((s, r) => s + (r.roster?.length ?? 0), 0)
+      console.log(`   📊 ESPN: ${rosters.length} times, ${totalPlayers} jogadores totais (tentativa ${attempt})`)
+      if (totalPlayers > 0) break
+      if (attempt < MAX_ATTEMPTS) {
+        console.log(`   ⏳ ESPN: escalação vazia, tentando novamente em 5s...`)
+        await sleep(5000)
+      }
+    } catch (err) {
+      console.log(`   ❌ ESPN summary tentativa ${attempt}: ${err.message}`)
+      if (attempt < MAX_ATTEMPTS) await sleep(5000)
+    }
+  }
+
   try {
-    const res = await fetch(`${ESPN_BASE}/summary?event=${espnId}`, { headers: ESPN_HEADERS })
-    if (!res.ok) { console.log(`   ⚠️  ESPN summary ${res.status}`); return null }
-    const data = await res.json()
-
-    const rosters = data.rosters ?? []
-    const totalPlayers = rosters.reduce((s, r) => s + (r.roster?.length ?? 0), 0)
-    console.log(`   📊 ESPN: ${rosters.length} times, ${totalPlayers} jogadores totais`)
-
     if (rosters.length === 0 || totalPlayers === 0) {
       console.log('   ⏳ ESPN: escalação ainda não disponível')
       return null
@@ -237,24 +252,16 @@ async function main() {
 
   const now = new Date()
 
-  // Janelas de verificação antes do kickoff
-  const queryStart = new Date(now.getTime() +   5 * 60 * 1000)
-  const queryEnd   = new Date(now.getTime() +  75 * 60 * 1000)
-
-  const CHECK_WINDOWS = [
-    { label: '~60 min', min: 50, max: 80 },
-    { label: '~30 min', min: 25, max: 50 },
-    { label: '~15 min', min: 13, max: 25 },
-    { label: '~10 min', min:  6, max: 13 },
-    { label: '~5 min',  min:  1, max:  6 },
-  ]
+  // Busca jogos NS nas próximas 90 min — sem check windows, tenta a cada run.
+  // processMatch() já pula se lineup existir (count > 0).
+  const queryEnd = new Date(now.getTime() + 90 * 60 * 1000)
 
   // ── 1. Partidas próximas (NS) ─────────────────────────────────────────────
   const { data: upcoming = [], error: e1 } = await supabase
     .from('matches')
     .select('id, home_team, away_team, match_date, espn_event_id')
     .eq('status', 'NS')
-    .gte('match_date', queryStart.toISOString())
+    .gt('match_date', now.toISOString())
     .lte('match_date', queryEnd.toISOString())
     .order('match_date')
 
@@ -284,21 +291,14 @@ async function main() {
 
   // ── Processa próximas ─────────────────────────────────────────────────────
   if (upcoming.length > 0) {
-    console.log(`🔍 ${upcoming.length} partida(s) nas próximas 75 min:\n`)
+    console.log(`🔍 ${upcoming.length} partida(s) nas próximas 90 min:\n`)
     for (const match of upcoming) {
       const minsUntil = Math.round((new Date(match.match_date) - now) / 60000)
-      const window    = CHECK_WINDOWS.find(w => minsUntil >= w.min && minsUntil < w.max)
-      if (!window) {
-        const kick = new Date(match.match_date).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' })
-        console.log(`⚽ ${match.home_team} × ${match.away_team} — ${kick} BRT`)
-        console.log(`   ⏩ Fora da janela (${minsUntil} min)\n`)
-        continue
-      }
-      await processMatch(match, window.label)
+      await processMatch(match, `${minsUntil} min`)
       await sleep(300)
     }
   } else {
-    console.log('ℹ️  Nenhuma partida nas próximas 75 minutos.\n')
+    console.log('ℹ️  Nenhuma partida nas próximas 90 minutos.\n')
   }
 
   // ── Processa retroativos ──────────────────────────────────────────────────

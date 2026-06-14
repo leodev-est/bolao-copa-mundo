@@ -337,11 +337,13 @@ async function computeMinTeamCost() {
 
 // ── Verifica se a rodada encerrou ───────────────────────────────────────────────
 async function checkRoundCompletion(round) {
+  const endFilter = new Date(new Date(round.end_date).getTime() + 30 * 60 * 60 * 1000).toISOString()
+
   const { data: unfinished, error } = await supabase
     .from('matches')
     .select('id')
     .gte('match_date', round.start_date)
-    .lte('match_date', round.end_date)   // end_date já é timestamp completo
+    .lte('match_date', endFilter)
     .not('status', 'in', '("FT","AET","PEN","CANC")')
 
   if (error) {
@@ -379,11 +381,15 @@ async function main() {
     // Não altera o status da rodada aqui — o fechamento é gerenciado pelo pg_cron.
     // Rodadas 'open' ainda podem ter pontuações ao vivo calculadas normalmente.
 
+    // end_date is a BRT calendar date; Copa games at 21:00 ET = 01:00 UTC next day,
+    // so add 30h buffer: end_date + 1 day at 06:00 UTC covers all BRT-day games.
+    const endFilter = new Date(new Date(round.end_date).getTime() + 30 * 60 * 60 * 1000).toISOString()
+
     const { data: matches } = await supabase
       .from('matches')
       .select('id, api_match_id, home_team, away_team, home_team_id, away_team_id, score_home, score_away, status')
       .gte('match_date', round.start_date)
-      .lte('match_date', round.end_date + 'T23:59:59Z')
+      .lte('match_date', endFilter)
       .in('status', ['FT', 'AET', 'PEN', '1H', 'HT', '2H', 'ET', 'P'])
 
     if (!matches?.length) { console.log('  ↳ nenhuma partida encerrada ou ao vivo ainda\n'); continue }
