@@ -59,7 +59,11 @@ function parseEspnStatus(statusName, period) {
   if (statusName === 'STATUS_FINAL_AET' || statusName === 'STATUS_FINAL_EXTRA_TIME') return 'AET'
   if (statusName === 'STATUS_FINAL_PEN')                                      return 'PEN'
   if (statusName === 'STATUS_HALFTIME')                                       return 'HT'
+  if (statusName === 'STATUS_FIRST_HALF')                                     return '1H'
+  if (statusName === 'STATUS_SECOND_HALF')                                    return '2H'
   if (statusName === 'STATUS_IN_PROGRESS') return (period ?? 1) <= 1 ? '1H' : '2H'
+  if (statusName === 'STATUS_EXTRA_TIME')                                     return 'ET'
+  if (statusName === 'STATUS_PENALTY')                                        return 'BT'
   if (statusName === 'STATUS_POSTPONED' || statusName === 'STATUS_CANCELLED') return 'CANC'
   return null // null = não altera status (ainda NS/agendado)
 }
