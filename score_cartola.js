@@ -46,9 +46,13 @@ function namesMatch(espnName, dbName) {
   if (!espnName || !dbName) return false
   const en = norm(espnName)
   const dn = norm(dbName)
+  // Nome completo ou substring (ex: "Gyökeres" bate "Viktor Gyökeres")
   if (en === dn || en.includes(dn) || dn.includes(en)) return true
-  const words = en.split(' ').filter(w => w.length >= 4)
-  return words.some(w => dn.includes(w))
+  // Sobrenome: último token de cada nome deve ser igual e ter >=4 chars
+  // Evita falsos positivos por primeiro nome comum (Viktor X vs Viktor Y, Alexander X vs Alexander Y)
+  const enLast = en.split(' ').filter(Boolean).at(-1) ?? ''
+  const dnLast = dn.split(' ').filter(Boolean).at(-1) ?? ''
+  return enLast.length >= 4 && enLast === dnLast
 }
 
 function teamsMatch(espnTeam, dbTeam) {
@@ -112,17 +116,20 @@ async function fetchEspnEvents(espnId) {
         const afterDot = text.replace(/^Goal!.*?\.\s+/, '')
         const scorerMatch = afterDot.match(/^(.+?)\s+\(([^)]+)\)/)
         if (scorerMatch) {
-          const isOwn = text.toLowerCase().includes('own goal')
-          goals.push({ name: scorerMatch[1].trim(), team: scorerMatch[2].trim(), isOwn })
+          const isOwn    = text.toLowerCase().includes('own goal')
+          const goalTeam = scorerMatch[2].trim()
+          goals.push({ name: scorerMatch[1].trim(), team: goalTeam, isOwn })
+          // Assistência vem do mesmo time que o gol
+          const assistMatch = text.match(/[Aa]ssisted by ([^.,(]+)/i)
+          if (assistMatch) assists.push({ name: assistMatch[1].trim(), team: goalTeam })
         }
-        const assistMatch = text.match(/[Aa]ssisted by ([^.,(]+)/i)
-        if (assistMatch) assists.push({ name: assistMatch[1].trim() })
       } else if (text.toLowerCase().includes('yellow card')) {
-        const m = text.match(/^([^(]+)\s+\(/)
-        if (m) yellows.push({ name: m[1].trim() })
+        // "Rani Khedira (Tunisia) is shown the yellow card..."
+        const m = text.match(/^([^(]+)\s+\(([^)]+)\)/)
+        if (m) yellows.push({ name: m[1].trim(), team: m[2].trim() })
       } else if (text.toLowerCase().includes('red card') || text.toLowerCase().includes('sent off')) {
-        const m = text.match(/^([^(]+)\s+\(/)
-        if (m) reds.push({ name: m[1].trim() })
+        const m = text.match(/^([^(]+)\s+\(([^)]+)\)/)
+        if (m) reds.push({ name: m[1].trim(), team: m[2].trim() })
       }
     }
 
@@ -297,7 +304,7 @@ async function processMatch(match, roundId) {
 
   const { data: players } = await supabase
     .from('cartola_players')
-    .select('id, name, api_player_id, position, team_id')
+    .select('id, name, team_name, api_player_id, position, team_id')
     .in('team_id', [match.home_team_id, match.away_team_id].filter(Boolean))
 
   if (!players?.length) {
@@ -311,14 +318,15 @@ async function processMatch(match, roundId) {
     const conceded = isHome ? effectiveAwayScore : effectiveHomeScore
     const cleanSheet = conceded === 0
 
+    const byName = (g) => namesMatch(g.name, player.name) && teamsMatch(g.team, player.team_name)
     let playerGoals, playerAssists, playerYellow, playerRed, playerPenSaved, playerOwnGoal
     if (espnEvents) {
-      playerGoals    = espnEvents.goals.filter(g => !g.isOwn && namesMatch(g.name, player.name)).length
-      playerAssists  = espnEvents.assists.filter(g => namesMatch(g.name, player.name)).length
-      playerYellow   = espnEvents.yellows.some(g => namesMatch(g.name, player.name))
-      playerRed      = espnEvents.reds.some(g => namesMatch(g.name, player.name))
+      playerGoals    = espnEvents.goals.filter(g => !g.isOwn && byName(g)).length
+      playerAssists  = espnEvents.assists.filter(g => byName(g)).length
+      playerYellow   = espnEvents.yellows.some(g => byName(g))
+      playerRed      = espnEvents.reds.some(g => byName(g))
       playerPenSaved = 0
-      playerOwnGoal  = espnEvents.goals.filter(g => g.isOwn && namesMatch(g.name, player.name)).length
+      playerOwnGoal  = espnEvents.goals.filter(g => g.isOwn && byName(g)).length
     } else {
       playerGoals    = goals.filter(e => e.pid === pid).length
       playerAssists  = assists.filter(e => e.pid === pid).length
