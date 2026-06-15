@@ -39,31 +39,31 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: 1 · Sincronizar jogos e placares
-        continue-on-error: true        # falha não impede as etapas seguintes
+      - name: 1 · Sincronizar jogos e placares (ESPN + football-data.org fallback)
+        continue-on-error: true
         env:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_FOOTBALL_DATA_KEY:    ${{ secrets.VITE_FOOTBALL_DATA_KEY }}
         run: node sync.js
 
-      - name: 2 · Sincronizar escalações (ESPN, sem auth)
-        if: always()                   # roda mesmo que etapa 1 falhe
+      - name: 2 · Sincronizar escalações (ESPN)
+        if: always()
         env:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node sync_lineups.js
 
       - name: 3 · Resolver palpites das partidas encerradas
+        if: always()
         env:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          VITE_FOOTBALL_DATA_KEY:    ${{ secrets.VITE_FOOTBALL_DATA_KEY }}
         run: node resolve_bets.js
 
       - name: 4 · Pontuar Cartola e ajustar preços
+        if: always()
         env:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          VITE_FOOTBALL_DATA_KEY:    ${{ secrets.VITE_FOOTBALL_DATA_KEY }}
         run: node score_cartola.js

@@ -22,14 +22,13 @@ try {
 } catch { /* .env não encontrado — usando vars do ambiente */ }
 
 const DRY_RUN = process.argv.includes('--dry-run')
+const FORCE   = process.argv.includes('--force')
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const BASE_URL   = 'https://api.football-data.org/v4'
-const API_KEY    = process.env.VITE_FOOTBALL_DATA_KEY
 const ESPN_BASE  = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world'
 const ESPN_HDRS  = {
   'User-Agent':  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
@@ -133,8 +132,27 @@ async function fetchEspnEvents(espnId) {
       }
     }
 
-    console.log(`    ↳ ESPN keyEvents: ${goals.length}G ${assists.length}A ${yellows.length}Y ${reds.length}R`)
-    return { goals, assists, yellows, reds }
+    // Stats por jogador (chutes no gol, defesas do goleiro)
+    const playerStats = []
+    for (const roster of (data.rosters ?? [])) {
+      const teamName = roster.team?.displayName ?? ''
+      for (const p of (roster.roster ?? [])) {
+        if (!p.athlete?.displayName) continue
+        const statMap = {}
+        for (const s of (p.stats ?? [])) statMap[s.name] = s.value ?? 0
+        playerStats.push({
+          name:          p.athlete.displayName,
+          team:          teamName,
+          shotsOnTarget: statMap.shotsOnTarget ?? 0,
+          saves:         statMap.saves         ?? null,   // explícito em alguns GKs
+          shotsFaced:    statMap.shotsFaced     ?? 0,
+          goalsConceded: statMap.goalsConceded  ?? 0,
+        })
+      }
+    }
+
+    console.log(`    ↳ ESPN keyEvents: ${goals.length}G ${assists.length}A ${yellows.length}Y ${reds.length}R | ${playerStats.length} stats`)
+    return { goals, assists, yellows, reds, playerStats }
   } catch (err) {
     console.warn(`    ↳ ESPN keyEvents falhou: ${err.message}`)
     return null
@@ -150,10 +168,13 @@ const SCORING = {
   redCard:     -5,
   penaltySaved: 7,
   ownGoal:     -4,
+  shotOnTarget: { GK: 3, DEF: 3, MID: 2, FWD: 2 },
+  save:         2,
 }
 
 function calcScore({ position, goals = 0, assists = 0, cleanSheet = false,
-  yellowCard = false, redCard = false, penaltySaved = 0, ownGoal = 0 }) {
+  yellowCard = false, redCard = false, penaltySaved = 0, ownGoal = 0,
+  shotsOnTarget = 0, saves = 0 }) {
   let pts = 0
   pts += goals * (SCORING.goal[position] ?? 8)
   pts += assists * SCORING.assist
@@ -162,51 +183,12 @@ function calcScore({ position, goals = 0, assists = 0, cleanSheet = false,
   if (redCard)    pts += SCORING.redCard
   pts += penaltySaved * SCORING.penaltySaved
   pts += ownGoal * SCORING.ownGoal
+  pts += shotsOnTarget * (SCORING.shotOnTarget[position] ?? 1)
+  if (position === 'GK') pts += saves * SCORING.save
   return pts
 }
 
 function applyCapitan(base, isCaptain) { return isCaptain ? base * 2 : base }
-
-// ── API ─────────────────────────────────────────────────────────────────────────
-async function fetchMatchDetail(matchId) {
-  const res = await fetch(`${BASE_URL}/matches/${matchId}`, {
-    headers: { 'X-Auth-Token': API_KEY },
-  })
-  if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`)
-  return res.json()
-}
-
-// ── Extrai eventos relevantes do match detail ───────────────────────────────────
-function parseMatchDetail(detail) {
-  const goals     = []
-  const assists   = []
-  const yellows   = []
-  const reds      = []
-  const penSaved  = []
-  const ownGoals  = []
-
-  for (const g of detail.goals ?? []) {
-    const pid    = g.scorer?.id ?? null
-    const teamId = g.team?.id ?? null
-    if (g.type === 'OWN') {
-      ownGoals.push({ pid, teamId })
-    } else {
-      goals.push({ pid, teamId })
-      if (g.assist?.id) assists.push({ pid: g.assist.id, teamId })
-    }
-  }
-
-  for (const b of detail.bookings ?? []) {
-    const pid = b.player?.id ?? null
-    if (b.card === 'YELLOW') yellows.push({ pid })
-    if (b.card === 'RED')    reds.push({ pid })
-  }
-
-  // Pênalti defendido: inferable se goleiro tem penaltySaved no summary
-  // football-data.org não expõe isso explicitamente — deixamos zerado por ora
-
-  return { goals, assists, yellows, reds, penSaved, ownGoals }
-}
 
 const LIVE_STATUSES = ['1H', 'HT', '2H', 'ET', 'P']
 
@@ -232,32 +214,31 @@ async function processMatch(match, roundId) {
     if (existing?.length > 0) {
       const hoursAfterKickoff = (Date.now() - new Date(match.match_date).getTime()) / 3_600_000
 
-      // >7 dias: dados estáveis, nunca re-processa
-      if (hoursAfterKickoff > 168) {
-        console.log('    ↳ já pontuado (>7 dias), pulando')
-        return false
+      if (!FORCE) {
+        // >7 dias: dados estáveis, nunca re-processa
+        if (hoursAfterKickoff > 168) {
+          console.log('    ↳ já pontuado (>7 dias), pulando')
+          return false
+        }
+
+        const matchHasGoals   = (match.score_home ?? 0) + (match.score_away ?? 0) > 0
+        const recordHasEvents = existing.some(r => r.goals > 0 || r.assists > 0 || r.yellow_card || r.red_card)
+
+        // >48h E (tem eventos OU é 0×0): pontuação está correta, pula
+        if (hoursAfterKickoff > 48 && (recordHasEvents || !matchHasGoals)) {
+          console.log('    ↳ já pontuado (>48h), pulando')
+          return false
+        }
       }
 
-      const matchHasGoals  = (match.score_home ?? 0) + (match.score_away ?? 0) > 0
-      const recordHasEvents = existing.some(r => r.goals > 0 || r.assists > 0 || r.yellow_card || r.red_card)
-
-      // >48h E (tem eventos OU é 0×0): pontuação está correta, pula
-      if (hoursAfterKickoff > 48 && (recordHasEvents || !matchHasGoals)) {
-        console.log('    ↳ já pontuado (>48h), pulando')
-        return false
-      }
-
-      // Caso contrário: match tem gols mas registros têm 0 eventos → era bug, re-processa
-      // Também re-processa em <48h para corrigir dados capturados ao vivo
-      console.log('    ↳ re-processando com placar final...')
+      // Re-processa: match com gols sem eventos detectados, <48h ao vivo, ou --force
+      console.log(`    ↳ re-processando${FORCE ? ' (--force)' : ' com placar final'}...`)
       if (!DRY_RUN) {
         await supabase.from('cartola_player_scores').delete().eq('match_id', match.id).eq('round_id', roundId)
       }
     }
   }
 
-  // Copa 2026: ESPN é a fonte primária de eventos (football-data.org retorna goals=[] nesse torneio).
-  // Se ESPN não tiver espn_event_id ou falhar, usa football-data.org como fallback.
   let espnId = match.espn_event_id
   if (!espnId) {
     espnId = await findEspnEventId(match)
@@ -271,17 +252,9 @@ async function processMatch(match, roundId) {
     espnEvents = await fetchEspnEvents(espnId)
   }
 
-  let parsed = { goals: [], assists: [], yellows: [], reds: [], penSaved: [], ownGoals: [] }
   if (!espnEvents) {
-    try {
-      const detail = await fetchMatchDetail(match.api_match_id)
-      parsed = parseMatchDetail(detail)
-    } catch (err) {
-      console.warn(`    ↳ sem eventos: ${err.message}`)
-    }
+    console.warn('    ↳ ESPN indisponível — pontuação parcial (só clean sheet)')
   }
-
-  const { goals, assists, yellows, reds, penSaved, ownGoals } = parsed
 
   let effectiveHomeScore, effectiveAwayScore
   if (isLive) {
@@ -291,10 +264,8 @@ async function processMatch(match, roundId) {
       effectiveAwayScore = espnEvents.goals.filter(g => !g.isOwn && teamsMatch(g.team, match.away_team)).length
                          + espnEvents.goals.filter(g =>  g.isOwn && teamsMatch(g.team, match.home_team)).length
     } else {
-      effectiveHomeScore = goals.filter(g => g.teamId === match.home_team_id).length
-                         + ownGoals.filter(g => g.teamId === match.away_team_id).length
-      effectiveAwayScore = goals.filter(g => g.teamId === match.away_team_id).length
-                         + ownGoals.filter(g => g.teamId === match.home_team_id).length
+      effectiveHomeScore = match.score_home ?? 0
+      effectiveAwayScore = match.score_away ?? 0
     }
     console.log(`    ↳ placar parcial: ${effectiveHomeScore} × ${effectiveAwayScore} (${match.status})`)
   } else {
@@ -302,10 +273,24 @@ async function processMatch(match, roundId) {
     effectiveAwayScore = match.score_away ?? 0
   }
 
-  const { data: players } = await supabase
-    .from('cartola_players')
-    .select('id, name, team_name, api_player_id, position, team_id')
-    .in('team_id', [match.home_team_id, match.away_team_id].filter(Boolean))
+  // Busca por team_id (rápido) — fallback por team_name para mata-mata sem IDs
+  let players
+  const teamIds = [match.home_team_id, match.away_team_id].filter(Boolean)
+  if (teamIds.length > 0) {
+    const { data } = await supabase
+      .from('cartola_players')
+      .select('id, name, team_name, api_player_id, position, team_id')
+      .in('team_id', teamIds)
+    players = data
+  }
+  if (!players?.length) {
+    const { data: all } = await supabase
+      .from('cartola_players')
+      .select('id, name, team_name, api_player_id, position, team_id')
+    players = (all ?? []).filter(p =>
+      teamsMatch(p.team_name, match.home_team) || teamsMatch(p.team_name, match.away_team)
+    )
+  }
 
   if (!players?.length) {
     console.log('    ↳ nenhum jogador encontrado para esses times')
@@ -314,33 +299,45 @@ async function processMatch(match, roundId) {
 
   const rows = players.map(player => {
     const pid = player.api_player_id
-    const isHome = player.team_id === match.home_team_id
+    const isHome = match.home_team_id
+      ? player.team_id === match.home_team_id
+      : teamsMatch(player.team_name, match.home_team)
     const conceded = isHome ? effectiveAwayScore : effectiveHomeScore
     const cleanSheet = conceded === 0
 
     const byName = (g) => namesMatch(g.name, player.name) && teamsMatch(g.team, player.team_name)
-    let playerGoals, playerAssists, playerYellow, playerRed, playerPenSaved, playerOwnGoal
+    let playerGoals = 0, playerAssists = 0, playerYellow = false, playerRed = false
+    let playerPenSaved = 0, playerOwnGoal = 0
     if (espnEvents) {
       playerGoals    = espnEvents.goals.filter(g => !g.isOwn && byName(g)).length
       playerAssists  = espnEvents.assists.filter(g => byName(g)).length
       playerYellow   = espnEvents.yellows.some(g => byName(g))
       playerRed      = espnEvents.reds.some(g => byName(g))
-      playerPenSaved = 0
       playerOwnGoal  = espnEvents.goals.filter(g => g.isOwn && byName(g)).length
-    } else {
-      playerGoals    = goals.filter(e => e.pid === pid).length
-      playerAssists  = assists.filter(e => e.pid === pid).length
-      playerYellow   = yellows.some(e => e.pid === pid)
-      playerRed      = reds.some(e => e.pid === pid)
-      playerPenSaved = penSaved.filter(e => e.pid === pid).length
-      playerOwnGoal  = ownGoals.filter(e => e.pid === pid).length
     }
-    const playerCS       = cleanSheet && (player.position === 'GK' || player.position === 'DEF')
+
+    // Stats extras da ESPN: chutes no gol e defesas do goleiro
+    let playerSOG = 0, playerSaves = 0
+    if (espnEvents?.playerStats) {
+      const pStat = espnEvents.playerStats.find(s => byName(s))
+      if (pStat) {
+        playerSOG = pStat.shotsOnTarget ?? 0
+        if (player.position === 'GK') {
+          // ESPN às vezes expõe 'saves' diretamente; se não, calcula shotsFaced - goalsConceded
+          playerSaves = pStat.saves !== null
+            ? pStat.saves
+            : Math.max(0, (pStat.shotsFaced ?? 0) - (pStat.goalsConceded ?? 0))
+        }
+      }
+    }
+
+    const playerCS = cleanSheet && (player.position === 'GK' || player.position === 'DEF')
 
     const total = calcScore({
       position: player.position, goals: playerGoals, assists: playerAssists,
       cleanSheet: playerCS, yellowCard: playerYellow, redCard: playerRed,
       penaltySaved: playerPenSaved, ownGoal: playerOwnGoal,
+      shotsOnTarget: playerSOG, saves: playerSaves,
     })
 
     return {
@@ -526,7 +523,7 @@ async function checkRoundCompletion(round) {
 // ── Main ────────────────────────────────────────────────────────────────────────
 async function main() {
   const now = new Date().toISOString().split('T')[0]
-  console.log(`🏆 Score Cartola — ${now}${DRY_RUN ? ' (DRY RUN)' : ''}\n`)
+  console.log(`🏆 Score Cartola — ${now}${DRY_RUN ? ' (DRY RUN)' : ''}${FORCE ? ' (FORCE)' : ''}\n`)
 
   const { data: rounds, error: roundErr } = await supabase
     .from('cartola_rounds')
