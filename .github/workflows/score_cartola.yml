@@ -40,6 +40,7 @@ jobs:
         run: npm ci
 
       - name: 1 · Sincronizar jogos e placares
+        continue-on-error: true        # falha não impede as etapas seguintes
         env:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -47,6 +48,7 @@ jobs:
         run: node sync.js
 
       - name: 2 · Sincronizar escalações (ESPN, sem auth)
+        if: always()                   # roda mesmo que etapa 1 falhe
         env:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

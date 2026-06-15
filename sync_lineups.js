@@ -69,14 +69,18 @@ function norm(s) { return s.toLowerCase().normalize('NFD').replace(/[^a-z]/g, ''
 
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
 
-// ESPN usa nomes diferentes: "Korea Republic" vs "South Korea", "Bosnia-Herzegovina" vs nosso DB.
-// Verifica se alguma palavra ≥4 chars do nome ESPN aparece no nome do DB.
+// ESPN usa nomes diferentes: "Korea Republic" vs "South Korea", "Türkiye" vs "Turkey".
+// Verifica substring e prefixo de 4 chars entre palavras do nome ESPN e do DB.
 function teamsMatch(espnName, dbName) {
   const en = norm(espnName)
   const dn = norm(dbName)
   if (en === dn || en.includes(dn) || dn.includes(en)) return true
-  const parts = espnName.toLowerCase().split(/[\s\-\/&]+/)
-  return parts.some(p => p.length >= 4 && dn.includes(norm(p)))
+  const espnParts = en.split(' ').filter(w => w.length >= 4)
+  const dbParts   = dn.split(' ').filter(w => w.length >= 4)
+  return espnParts.some(ep =>
+    dn.includes(ep) ||
+    dbParts.some(dp => ep.slice(0, 4) === dp.slice(0, 4))
+  )
 }
 
 // ─── ESPN: descoberta de event ID ─────────────────────────────────────────────

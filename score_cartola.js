@@ -28,8 +28,111 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const BASE_URL = 'https://api.football-data.org/v4'
-const API_KEY  = process.env.VITE_FOOTBALL_DATA_KEY
+const BASE_URL   = 'https://api.football-data.org/v4'
+const API_KEY    = process.env.VITE_FOOTBALL_DATA_KEY
+const ESPN_BASE  = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world'
+const ESPN_HDRS  = {
+  'User-Agent':  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  'Accept':      'application/json',
+  'Origin':      'https://www.espn.com',
+  'Referer':     'https://www.espn.com/',
+}
+
+function norm(s) {
+  return s.toLowerCase().normalize('NFD').replace(/[^a-z ]/g, '').trim()
+}
+
+function namesMatch(espnName, dbName) {
+  if (!espnName || !dbName) return false
+  const en = norm(espnName)
+  const dn = norm(dbName)
+  if (en === dn || en.includes(dn) || dn.includes(en)) return true
+  const words = en.split(' ').filter(w => w.length >= 4)
+  return words.some(w => dn.includes(w))
+}
+
+function teamsMatch(espnTeam, dbTeam) {
+  if (!espnTeam || !dbTeam) return false
+  const en = norm(espnTeam)
+  const dn = norm(dbTeam)
+  if (en === dn || en.includes(dn) || dn.includes(en)) return true
+  const espnParts = en.split(' ').filter(w => w.length >= 4)
+  const dbParts   = dn.split(' ').filter(w => w.length >= 4)
+  // Word substring check OR 4-char prefix match (handles "Türkiye"↔"Turkey", "Korea Republic"↔"South Korea")
+  return espnParts.some(ep =>
+    dn.includes(ep) ||
+    dbParts.some(dp => ep.slice(0, 4) === dp.slice(0, 4))
+  )
+}
+
+function espnDateStr(date) {
+  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, '0')}${String(date.getUTCDate()).padStart(2, '0')}`
+}
+
+async function findEspnEventId(match) {
+  const d = new Date(match.match_date)
+  const candidates = [d, new Date(d.getTime() - 24 * 60 * 60 * 1000)]
+  for (const candidate of candidates) {
+    try {
+      const res = await fetch(`${ESPN_BASE}/scoreboard?dates=${espnDateStr(candidate)}`, { headers: ESPN_HDRS })
+      if (!res.ok) continue
+      const data = await res.json()
+      for (const event of (data.events ?? [])) {
+        const comp     = event.competitions?.[0]
+        const homeComp = comp?.competitors?.find(c => c.homeAway === 'home')
+        const awayComp = comp?.competitors?.find(c => c.homeAway === 'away')
+        if (!homeComp || !awayComp) continue
+        if (teamsMatch(homeComp.team.displayName, match.home_team) &&
+            teamsMatch(awayComp.team.displayName, match.away_team)) {
+          return event.id
+        }
+      }
+    } catch {}
+  }
+  return null
+}
+
+async function fetchEspnEvents(espnId) {
+  try {
+    const res = await fetch(`${ESPN_BASE}/summary?event=${espnId}`, { headers: ESPN_HDRS })
+    if (!res.ok) return null
+    const data = await res.json()
+    const keyEvents = data.keyEvents ?? []
+
+    const goals   = []
+    const assists = []
+    const yellows = []
+    const reds    = []
+
+    for (const ev of keyEvents) {
+      const text = (ev.text ?? '').trim()
+      if (!text) continue
+
+      if (text.startsWith('Goal!')) {
+        const afterDot = text.replace(/^Goal!.*?\.\s+/, '')
+        const scorerMatch = afterDot.match(/^(.+?)\s+\(([^)]+)\)/)
+        if (scorerMatch) {
+          const isOwn = text.toLowerCase().includes('own goal')
+          goals.push({ name: scorerMatch[1].trim(), team: scorerMatch[2].trim(), isOwn })
+        }
+        const assistMatch = text.match(/[Aa]ssisted by ([^.,(]+)/i)
+        if (assistMatch) assists.push({ name: assistMatch[1].trim() })
+      } else if (text.toLowerCase().includes('yellow card')) {
+        const m = text.match(/^([^(]+)\s+\(/)
+        if (m) yellows.push({ name: m[1].trim() })
+      } else if (text.toLowerCase().includes('red card') || text.toLowerCase().includes('sent off')) {
+        const m = text.match(/^([^(]+)\s+\(/)
+        if (m) reds.push({ name: m[1].trim() })
+      }
+    }
+
+    console.log(`    ↳ ESPN keyEvents: ${goals.length}G ${assists.length}A ${yellows.length}Y ${reds.length}R`)
+    return { goals, assists, yellows, reds }
+  } catch (err) {
+    console.warn(`    ↳ ESPN keyEvents falhou: ${err.message}`)
+    return null
+  }
+}
 
 // ── Pontuação ───────────────────────────────────────────────────────────────────
 const SCORING = {
@@ -112,47 +215,80 @@ async function processMatch(match, roundId) {
     return false
   }
 
-  // Partidas encerradas: pula se pontuadas há mais de 48h (placar definitivo).
-  // Nas primeiras 48h sempre re-processa — evita bug de clean_sheet capturado
-  // enquanto ao vivo e nunca corrigido após o placar final (ex: 7×0 → 7×1).
   if (!isLive) {
     const { data: existing } = await supabase
       .from('cartola_player_scores')
-      .select('id')
+      .select('id, goals, assists, yellow_card, red_card')
       .eq('match_id', match.id)
       .eq('round_id', roundId)
-      .limit(1)
 
     if (existing?.length > 0) {
       const hoursAfterKickoff = (Date.now() - new Date(match.match_date).getTime()) / 3_600_000
-      if (hoursAfterKickoff > 48) {
+
+      // >7 dias: dados estáveis, nunca re-processa
+      if (hoursAfterKickoff > 168) {
+        console.log('    ↳ já pontuado (>7 dias), pulando')
+        return false
+      }
+
+      const matchHasGoals  = (match.score_home ?? 0) + (match.score_away ?? 0) > 0
+      const recordHasEvents = existing.some(r => r.goals > 0 || r.assists > 0 || r.yellow_card || r.red_card)
+
+      // >48h E (tem eventos OU é 0×0): pontuação está correta, pula
+      if (hoursAfterKickoff > 48 && (recordHasEvents || !matchHasGoals)) {
         console.log('    ↳ já pontuado (>48h), pulando')
         return false
       }
-      // Re-processa para garantir placar final correto
+
+      // Caso contrário: match tem gols mas registros têm 0 eventos → era bug, re-processa
+      // Também re-processa em <48h para corrigir dados capturados ao vivo
       console.log('    ↳ re-processando com placar final...')
-      await supabase.from('cartola_player_scores').delete().eq('match_id', match.id).eq('round_id', roundId)
+      if (!DRY_RUN) {
+        await supabase.from('cartola_player_scores').delete().eq('match_id', match.id).eq('round_id', roundId)
+      }
     }
   }
 
+  // Copa 2026: ESPN é a fonte primária de eventos (football-data.org retorna goals=[] nesse torneio).
+  // Se ESPN não tiver espn_event_id ou falhar, usa football-data.org como fallback.
+  let espnId = match.espn_event_id
+  if (!espnId) {
+    espnId = await findEspnEventId(match)
+    if (espnId && !DRY_RUN) {
+      await supabase.from('matches').update({ espn_event_id: espnId }).eq('id', match.id)
+    }
+  }
+
+  let espnEvents = null
+  if (espnId) {
+    espnEvents = await fetchEspnEvents(espnId)
+  }
+
   let parsed = { goals: [], assists: [], yellows: [], reds: [], penSaved: [], ownGoals: [] }
-  try {
-    const detail = await fetchMatchDetail(match.api_match_id)
-    parsed = parseMatchDetail(detail)
-  } catch (err) {
-    console.warn(`    ↳ sem eventos: ${err.message}`)
+  if (!espnEvents) {
+    try {
+      const detail = await fetchMatchDetail(match.api_match_id)
+      parsed = parseMatchDetail(detail)
+    } catch (err) {
+      console.warn(`    ↳ sem eventos: ${err.message}`)
+    }
   }
 
   const { goals, assists, yellows, reds, penSaved, ownGoals } = parsed
 
-  // Para partidas ao vivo, calcula o placar atual pelo array de gols
-  // (score_home/score_away é null enquanto a partida não encerrou)
   let effectiveHomeScore, effectiveAwayScore
   if (isLive) {
-    effectiveHomeScore = goals.filter(g => g.teamId === match.home_team_id).length
-                       + ownGoals.filter(g => g.teamId === match.away_team_id).length
-    effectiveAwayScore = goals.filter(g => g.teamId === match.away_team_id).length
-                       + ownGoals.filter(g => g.teamId === match.home_team_id).length
+    if (espnEvents) {
+      effectiveHomeScore = espnEvents.goals.filter(g => !g.isOwn && teamsMatch(g.team, match.home_team)).length
+                         + espnEvents.goals.filter(g =>  g.isOwn && teamsMatch(g.team, match.away_team)).length
+      effectiveAwayScore = espnEvents.goals.filter(g => !g.isOwn && teamsMatch(g.team, match.away_team)).length
+                         + espnEvents.goals.filter(g =>  g.isOwn && teamsMatch(g.team, match.home_team)).length
+    } else {
+      effectiveHomeScore = goals.filter(g => g.teamId === match.home_team_id).length
+                         + ownGoals.filter(g => g.teamId === match.away_team_id).length
+      effectiveAwayScore = goals.filter(g => g.teamId === match.away_team_id).length
+                         + ownGoals.filter(g => g.teamId === match.home_team_id).length
+    }
     console.log(`    ↳ placar parcial: ${effectiveHomeScore} × ${effectiveAwayScore} (${match.status})`)
   } else {
     effectiveHomeScore = match.score_home ?? 0
@@ -161,7 +297,7 @@ async function processMatch(match, roundId) {
 
   const { data: players } = await supabase
     .from('cartola_players')
-    .select('id, api_player_id, position, team_id')
+    .select('id, name, api_player_id, position, team_id')
     .in('team_id', [match.home_team_id, match.away_team_id].filter(Boolean))
 
   if (!players?.length) {
@@ -175,12 +311,22 @@ async function processMatch(match, roundId) {
     const conceded = isHome ? effectiveAwayScore : effectiveHomeScore
     const cleanSheet = conceded === 0
 
-    const playerGoals    = goals.filter(e => e.pid === pid).length
-    const playerAssists  = assists.filter(e => e.pid === pid).length
-    const playerYellow   = yellows.some(e => e.pid === pid)
-    const playerRed      = reds.some(e => e.pid === pid)
-    const playerPenSaved = penSaved.filter(e => e.pid === pid).length
-    const playerOwnGoal  = ownGoals.filter(e => e.pid === pid).length
+    let playerGoals, playerAssists, playerYellow, playerRed, playerPenSaved, playerOwnGoal
+    if (espnEvents) {
+      playerGoals    = espnEvents.goals.filter(g => !g.isOwn && namesMatch(g.name, player.name)).length
+      playerAssists  = espnEvents.assists.filter(g => namesMatch(g.name, player.name)).length
+      playerYellow   = espnEvents.yellows.some(g => namesMatch(g.name, player.name))
+      playerRed      = espnEvents.reds.some(g => namesMatch(g.name, player.name))
+      playerPenSaved = 0
+      playerOwnGoal  = espnEvents.goals.filter(g => g.isOwn && namesMatch(g.name, player.name)).length
+    } else {
+      playerGoals    = goals.filter(e => e.pid === pid).length
+      playerAssists  = assists.filter(e => e.pid === pid).length
+      playerYellow   = yellows.some(e => e.pid === pid)
+      playerRed      = reds.some(e => e.pid === pid)
+      playerPenSaved = penSaved.filter(e => e.pid === pid).length
+      playerOwnGoal  = ownGoals.filter(e => e.pid === pid).length
+    }
     const playerCS       = cleanSheet && (player.position === 'GK' || player.position === 'DEF')
 
     const total = calcScore({
@@ -395,7 +541,7 @@ async function main() {
 
     const { data: matches } = await supabase
       .from('matches')
-      .select('id, api_match_id, home_team, away_team, home_team_id, away_team_id, score_home, score_away, status')
+      .select('id, api_match_id, home_team, away_team, home_team_id, away_team_id, score_home, score_away, status, espn_event_id, match_date')
       .gte('match_date', round.start_date)
       .lte('match_date', endFilter)
       .in('status', ['FT', 'AET', 'PEN', '1H', 'HT', '2H', 'ET', 'P'])
@@ -414,7 +560,7 @@ async function main() {
         if (LIVE_STATUSES.includes(match.status)) liveProcessed++
         else finishedProcessed++
       }
-      await new Promise(r => setTimeout(r, 6500)) // respeita 10 req/min do plano gratuito
+      await new Promise(r => setTimeout(r, 1000)) // pequena pausa entre jogos
     }
 
     if (liveProcessed + finishedProcessed > 0) {
