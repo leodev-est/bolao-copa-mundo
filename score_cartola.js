@@ -273,7 +273,7 @@ async function processMatch(match, roundId) {
     effectiveAwayScore = match.score_away ?? 0
   }
 
-  // Busca por team_id (rápido) — fallback por team_name para mata-mata sem IDs
+  // Busca por team_id (grupo) ou team_name exato (mata-mata sem IDs do FD.org)
   let players
   const teamIds = [match.home_team_id, match.away_team_id].filter(Boolean)
   if (teamIds.length > 0) {
@@ -282,13 +282,13 @@ async function processMatch(match, roundId) {
       .select('id, name, team_name, api_player_id, position, team_id')
       .in('team_id', teamIds)
     players = data
-  }
-  if (!players?.length) {
+  } else {
+    // Mata-mata: sem team_id no banco — usa nome exato para evitar falsos positivos
     const { data: all } = await supabase
       .from('cartola_players')
       .select('id, name, team_name, api_player_id, position, team_id')
     players = (all ?? []).filter(p =>
-      teamsMatch(p.team_name, match.home_team) || teamsMatch(p.team_name, match.away_team)
+      norm(p.team_name) === norm(match.home_team) || norm(p.team_name) === norm(match.away_team)
     )
   }
 
