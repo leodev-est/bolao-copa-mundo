@@ -2,14 +2,15 @@
  * Resolve palpites de partidas encerradas.
  * Rodado pelo GitHub Actions após sync.js.
  *
- * Uso local: node resolve_bets.js
- * Uso dry-run: node resolve_bets.js --dry-run
+ * Uso local:    node resolve_bets.js
+ * Dry-run:      node resolve_bets.js --dry-run
+ * Forçar re-resolve (corrige bets já resolvidos com dados errados):
+ *               node resolve_bets.js --force
  */
 
 import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'fs'
 
-// Carrega .env localmente (em CI as vars já estão no ambiente)
 try {
   const raw = readFileSync('.env', 'utf-8')
   raw.split('\n').filter(l => l.includes('=') && !l.startsWith('#')).forEach(l => {
@@ -18,50 +19,136 @@ try {
     const v = l.slice(i + 1).trim()
     if (!process.env[k]) process.env[k] = v
   })
-} catch { /* .env não encontrado — usando vars do ambiente */ }
+} catch {}
 
-const DRY_RUN   = process.argv.includes('--dry-run')
-const supabase  = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-const API_KEY   = process.env.VITE_FOOTBALL_DATA_KEY
-const BASE_URL  = 'https://api.football-data.org/v4'
-const FINISHED  = ['FT', 'AET', 'PEN']
+const DRY_RUN  = process.argv.includes('--dry-run')
+const FORCE    = process.argv.includes('--force')
+const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+const FINISHED = ['FT', 'AET', 'PEN']
 
-async function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
+const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world'
+const ESPN_HDRS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  'Accept':     'application/json',
+  'Origin':     'https://www.espn.com',
+  'Referer':    'https://www.espn.com/',
+}
 
-async function getGoals(apiMatchId) {
+function norm(s) {
+  return s.toLowerCase().normalize('NFD').replace(/[^a-z ]/g, '').trim()
+}
+
+function namesMatch(a, b) {
+  if (!a || !b) return false
+  const an = norm(a), bn = norm(b)
+  if (an === bn || an.includes(bn) || bn.includes(an)) return true
+  const aLast = an.split(' ').filter(Boolean).at(-1) ?? ''
+  const bLast = bn.split(' ').filter(Boolean).at(-1) ?? ''
+  return aLast.length >= 4 && aLast === bLast
+}
+
+function teamsMatch(a, b) {
+  if (!a || !b) return false
+  const an = norm(a), bn = norm(b)
+  if (an === bn || an.includes(bn) || bn.includes(an)) return true
+  const aParts = an.split(' ').filter(w => w.length >= 4)
+  const bParts = bn.split(' ').filter(w => w.length >= 4)
+  return aParts.some(ap => bn.includes(ap) || bParts.some(bp => ap.slice(0, 4) === bp.slice(0, 4)))
+}
+
+function espnDateStr(d) {
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`
+}
+
+async function findEspnEventId(match) {
+  const d = new Date(match.match_date)
+  for (const candidate of [d, new Date(d.getTime() - 86400_000)]) {
+    try {
+      const res = await fetch(`${ESPN_BASE}/scoreboard?dates=${espnDateStr(candidate)}`, { headers: ESPN_HDRS })
+      if (!res.ok) continue
+      const data = await res.json()
+      for (const ev of (data.events ?? [])) {
+        const comp = ev.competitions?.[0]
+        const home = comp?.competitors?.find(c => c.homeAway === 'home')
+        const away = comp?.competitors?.find(c => c.homeAway === 'away')
+        if (home && away &&
+            teamsMatch(home.team.displayName, match.home_team) &&
+            teamsMatch(away.team.displayName, match.away_team)) {
+          return ev.id
+        }
+      }
+    } catch {}
+  }
+  return null
+}
+
+// Busca artilheiros via ESPN keyEvents e enriquece com ESPN athlete IDs do bet_options
+async function getGoals(espnEventId, matchId) {
+  if (!espnEventId) return []
   try {
-    const res = await fetch(`${BASE_URL}/matches/${apiMatchId}`, {
-      headers: { 'X-Auth-Token': API_KEY },
-    })
+    const res = await fetch(`${ESPN_BASE}/summary?event=${espnEventId}`, { headers: ESPN_HDRS })
     if (!res.ok) return []
     const data = await res.json()
-    return (data.goals ?? [])
-      .filter(g => g.type !== 'OWN')
-      .map(g => ({
-        player_id:   g.scorer?.id   ?? null,
-        player_name: g.scorer?.name ?? '',
-        team:        g.team?.name   ?? '',
-      }))
+
+    const goals = []
+    for (const ev of (data.keyEvents ?? [])) {
+      const text = (ev.text ?? '').trim()
+      if (!text.startsWith('Goal!') || text.toLowerCase().includes('own goal')) continue
+      const afterDot = text.replace(/^Goal!.*?\.\s+/, '')
+      const m = afterDot.match(/^(.+?)\s+\(([^)]+)\)/)
+      if (m) goals.push({ player_name: m[1].trim(), team: m[2].trim(), player_id: null })
+    }
+
+    // Enriquece com ESPN athlete_id do bet_options (player_id no metadata)
+    if (goals.length > 0) {
+      const { data: opts } = await supabase
+        .from('bet_options')
+        .select('metadata')
+        .eq('match_id', matchId)
+        .eq('type', 'goalscorer')
+
+      for (const goal of goals) {
+        const opt = opts?.find(o => namesMatch(goal.player_name, o.metadata?.player_name ?? ''))
+        if (opt?.metadata?.player_id) goal.player_id = opt.metadata.player_id
+      }
+    }
+
+    return goals
   } catch {
     return []
   }
 }
 
 async function main() {
-  console.log(`🎯 Resolve Bets — ${new Date().toISOString().slice(0, 10)}${DRY_RUN ? ' (DRY RUN)' : ''}\n`)
+  console.log(`🎯 Resolve Bets — ${new Date().toISOString().slice(0, 10)}${DRY_RUN ? ' (DRY RUN)' : ''}${FORCE ? ' (FORCE)' : ''}\n`)
 
-  // Partidas encerradas com palpites ainda pendentes
   const { data: matches } = await supabase
     .from('matches')
-    .select('id, api_match_id, status, score_home, score_away, home_team, away_team')
+    .select('id, api_match_id, espn_event_id, match_date, status, score_home, score_away, home_team, away_team')
     .in('status', FINISHED)
 
   if (!matches?.length) { console.log('Sem partidas encerradas.'); return }
 
+  // --force: reseta bets já resolvidos para pending (corrige dados errados do passado)
+  if (FORCE && !DRY_RUN) {
+    const matchIds = matches.map(m => m.id)
+    const { count: resetCount } = await supabase
+      .from('bets')
+      .select('id', { count: 'exact', head: true })
+      .in('match_id', matchIds)
+      .in('status', ['won', 'lost'])
+    if (resetCount > 0) {
+      await supabase.from('bets')
+        .update({ status: 'pending', points_won: 0 })
+        .in('match_id', matchIds)
+        .in('status', ['won', 'lost'])
+      console.log(`🔄 ${resetCount} bets resetados para pending\n`)
+    }
+  }
+
   let totalResolved = 0
 
   for (const match of matches) {
-    // Verifica se há palpites pendentes nessa partida
     const { count } = await supabase
       .from('bets')
       .select('id', { count: 'exact', head: true })
@@ -70,15 +157,20 @@ async function main() {
 
     if (!count) continue
 
-    // Pula se o placar ainda não está disponível — sync.js preencherá depois
     if (match.score_home === null || match.score_away === null) {
       console.log(`  ⏳ ${match.home_team} × ${match.away_team} — placar nulo, aguardando próximo sync`)
       continue
     }
 
-    console.log(`⚽ ${match.home_team} ${match.score_home} × ${match.score_away} ${match.away_team} (${count} palpites)`)
+    // Garante ESPN event ID
+    let espnId = match.espn_event_id
+    if (!espnId) {
+      espnId = await findEspnEventId(match)
+      if (espnId && !DRY_RUN) {
+        await supabase.from('matches').update({ espn_event_id: espnId }).eq('id', match.id)
+      }
+    }
 
-    // Verifica se havia escalação oficial — se não, artilheiros são ignorados
     const { count: lineupCount } = await supabase
       .from('bet_options')
       .select('id', { count: 'exact', head: true })
@@ -87,18 +179,17 @@ async function main() {
 
     const hasOfficialLineup = (lineupCount ?? 0) > 0
     if (!hasOfficialLineup) {
-      console.log('  ⚠️  Sem escalação via API — artilheiros anulados automaticamente')
+      console.log(`  ⚠️  ${match.home_team} × ${match.away_team} — sem escalação, artilheiros anulados`)
     }
 
-    // Busca artilheiros da partida
-    const goals = await getGoals(match.api_match_id)
-    await sleep(6500) // respeita 10 req/min do plano gratuito
+    const goals = await getGoals(espnId, match.id)
 
-    const actualHome   = match.score_home ?? 0
-    const actualAway   = match.score_away ?? 0
+    const actualHome   = match.score_home
+    const actualAway   = match.score_away
     const actualResult = actualHome > actualAway ? 'home' : actualAway > actualHome ? 'away' : 'draw'
 
-    // ── Palpites principais (placar + artilheiros) ────────────────────
+    console.log(`⚽ ${match.home_team} ${actualHome} × ${actualAway} ${match.away_team} (${count} palpites | ${goals.length} gols ESPN)`)
+
     const { data: mainBets } = await supabase
       .from('bets')
       .select('id, score_home, score_away, predicted_result, odd, points_wagered, bet_scorers(*)')
@@ -111,36 +202,44 @@ async function main() {
       const resultOk   = bet.predicted_result === actualResult
 
       let pointsWon = 0
-      // Odd mínima 1 para evitar multiplicação por 0; só aplica se acertou placar exato
       const safeOdd = typeof bet.odd === 'number' && bet.odd > 0 ? bet.odd : 1
       if (exactScore)    pointsWon += bet.points_wagered * safeOdd
       else if (resultOk) pointsWon += bet.points_wagered * 1.3
 
-      // Artilheiros: +0.5 por slot correto
-      // Só pontua se havia escalação oficial via API; caso contrário, anula silenciosamente
       const scorerUpdates = []
       if (hasOfficialLineup) {
         for (const scorer of (bet.bet_scorers ?? [])) {
           if (!scorer?.id) continue
           let correct = false
+
           if (scorer.player_id) {
+            // Tenta match por ESPN athlete ID + time (fonte primária)
             correct = goals.some(g =>
               g.player_id === scorer.player_id &&
-              (scorer.team === 'home' ? g.team === match.home_team : g.team === match.away_team)
-            )
-          } else if (scorer.player_name) {
-            correct = goals.some(g =>
-              g.player_name?.toLowerCase() === scorer.player_name.toLowerCase()
+              teamsMatch(g.team, scorer.team === 'home' ? match.home_team : match.away_team)
             )
           }
+          if (!correct && scorer.player_name) {
+            // Fallback: match por nome (case-insensitive + sobrenome)
+            correct = goals.some(g =>
+              namesMatch(g.player_name, scorer.player_name) &&
+              teamsMatch(g.team, scorer.team === 'home' ? match.home_team : match.away_team)
+            )
+          }
+
           if (correct) pointsWon += 0.5
           scorerUpdates.push({ id: scorer.id, correct })
         }
       }
 
       const betStatus = exactScore || resultOk || pointsWon > 0 ? 'won' : 'lost'
+      const correctScorers = scorerUpdates.filter(s => s.correct).length
 
-      if (!DRY_RUN) {
+      if (DRY_RUN) {
+        if (exactScore || resultOk || correctScorers > 0) {
+          console.log(`  🎯 [DRY] bet ${bet.id.slice(0, 8)}: placar=${exactScore} resultado=${resultOk} artilheiros=${correctScorers} → ${pointsWon.toFixed(1)} pts`)
+        }
+      } else {
         await supabase.from('bets').update({
           status:     betStatus,
           points_won: parseFloat(pointsWon.toFixed(2)),
@@ -155,7 +254,7 @@ async function main() {
       totalResolved++
     }
 
-    // ── Apostas extras (total_goals) ──────────────────────────────────
+    // Apostas extras (total_goals)
     const { data: extraOpts } = await supabase
       .from('bet_options')
       .select('id, type, metadata')
@@ -169,17 +268,15 @@ async function main() {
       if (threshold == null) continue
 
       const total  = actualHome + actualAway
-      // "over X" = total MAIOR que threshold; "under X" = total MENOR OU IGUAL
       const result = direction === 'over'
         ? total >  threshold ? 'won' : 'lost'
         : total <= threshold ? 'won' : 'lost'
 
       if (!DRY_RUN) {
         await supabase.from('bet_options').update({ result }).eq('id', opt.id)
-        // Resolve bets dos usuários nessa opção
         const { data: optBets } = await supabase
           .from('bets')
-          .select('id, points_wagered, bet_option_id')
+          .select('id, points_wagered')
           .eq('bet_option_id', opt.id)
           .eq('status', 'pending')
 
@@ -194,7 +291,7 @@ async function main() {
       }
     }
 
-    console.log(`  ↳ ${mainBets?.length ?? 0} palpites | artilheiros: ${goals.length} gols`)
+    console.log(`  ↳ ${mainBets?.length ?? 0} palpites | artilheiros: ${goals.map(g => g.player_name).join(', ') || 'nenhum'}`)
   }
 
   console.log(`\n✅ ${totalResolved} palpites resolvidos.`)
