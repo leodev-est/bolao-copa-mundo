@@ -112,7 +112,9 @@ async function processMatch(match, roundId) {
     return false
   }
 
-  // Partidas encerradas: pula se já pontuadas (scores não mudam mais)
+  // Partidas encerradas: pula se pontuadas há mais de 48h (placar definitivo).
+  // Nas primeiras 48h sempre re-processa — evita bug de clean_sheet capturado
+  // enquanto ao vivo e nunca corrigido após o placar final (ex: 7×0 → 7×1).
   if (!isLive) {
     const { data: existing } = await supabase
       .from('cartola_player_scores')
@@ -122,8 +124,14 @@ async function processMatch(match, roundId) {
       .limit(1)
 
     if (existing?.length > 0) {
-      console.log('    ↳ já pontuado, pulando')
-      return false
+      const hoursAfterKickoff = (Date.now() - new Date(match.match_date).getTime()) / 3_600_000
+      if (hoursAfterKickoff > 48) {
+        console.log('    ↳ já pontuado (>48h), pulando')
+        return false
+      }
+      // Re-processa para garantir placar final correto
+      console.log('    ↳ re-processando com placar final...')
+      await supabase.from('cartola_player_scores').delete().eq('match_id', match.id).eq('round_id', roundId)
     }
   }
 
