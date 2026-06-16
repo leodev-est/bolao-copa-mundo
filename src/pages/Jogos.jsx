@@ -3,6 +3,7 @@ import { Search, RefreshCw, Radio, ChevronDown, ChevronUp } from 'lucide-react'
 import MatchCard from '../components/MatchCard'
 import { MatchCardSkeleton, RoundHeaderSkeleton } from '../components/Skeleton'
 import { useMatches } from '../hooks/useMatches'
+import { useUserBets } from '../hooks/useBets'
 import { LIVE_STATUSES, FINISHED_STATUSES } from '../lib/api-football'
 
 // Fases da Copa 2026 em ordem de exibição
@@ -98,6 +99,16 @@ export default function Jogos() {
   const [tab, setTab]       = useState('all')
   const [search, setSearch] = useState('')
   const { matches, liveMatches, upcomingMatches, finishedMatches, isLoading, refetch } = useMatches()
+  const { data: userBets } = useUserBets()
+
+  // Map matchId → palpite principal (sem bet_option_id)
+  const betByMatch = useMemo(() => {
+    const map = {}
+    for (const b of (userBets ?? [])) {
+      if (b.bet_option_id == null) map[b.match_id] = b
+    }
+    return map
+  }, [userBets])
 
   const listMap = {
     all:      matches,
@@ -262,7 +273,7 @@ export default function Jogos() {
                 {isOpen && (
                   <div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-800 ml-4">
                     {ms.map(match => (
-                      <MatchCard key={match.id} match={match} />
+                      <MatchCard key={match.id} match={match} userBet={betByMatch[match.id]} />
                     ))}
                   </div>
                 )}
@@ -274,7 +285,7 @@ export default function Jogos() {
         /* Lista flat para outras abas */
         <div className="space-y-3">
           {filtered.map(match => (
-            <MatchCard key={match.id} match={match} />
+            <MatchCard key={match.id} match={match} userBet={betByMatch[match.id]} />
           ))}
         </div>
       )}

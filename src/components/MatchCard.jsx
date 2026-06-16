@@ -26,12 +26,20 @@ function StatusBadge({ status }) {
   )
 }
 
-function CardContent({ match, isLocked }) {
+function CardContent({ match, isLocked, userBet }) {
   const isFinished = FINISHED_STATUSES.includes(match.status)
   const isLive     = LIVE_STATUSES.includes(match.status)
   const isUpcoming = !isLocked
 
   const matchDate = new Date(match.match_date)
+
+  // Lógica do palpite do usuário
+  const hasBet     = userBet && isFinished
+  const betWon     = hasBet && userBet.status === 'won'
+  const betLost    = hasBet && userBet.status === 'lost'
+  const exactScore = hasBet &&
+    userBet.score_home === match.score_home &&
+    userBet.score_away === match.score_away
 
   return (
     <>
@@ -60,11 +68,36 @@ function CardContent({ match, isLocked }) {
 
         <div className="flex flex-col items-center gap-1 min-w-[70px] sm:min-w-[80px]">
           {(isFinished || isLive) && match.score_home !== null ? (
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-black text-white">{match.score_home}</span>
-              <span className="text-gray-500 text-lg">×</span>
-              <span className="text-2xl font-black text-white">{match.score_away}</span>
-            </div>
+            <>
+              {/* Palpite do usuário — só mostra se errou */}
+              {betLost && (
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-sm font-bold text-red-400/80">{userBet.score_home}</span>
+                  <span className="text-red-400/50 text-xs">×</span>
+                  <span className="text-sm font-bold text-red-400/80">{userBet.score_away}</span>
+                </div>
+              )}
+              {/* Placar real — verde se acertou */}
+              <div className="flex items-center gap-2">
+                <span className={`text-2xl font-black ${exactScore ? 'text-emerald-400' : betWon ? 'text-emerald-400' : 'text-white'}`}>
+                  {match.score_home}
+                </span>
+                <span className={`text-lg ${betWon ? 'text-emerald-600' : 'text-gray-500'}`}>×</span>
+                <span className={`text-2xl font-black ${exactScore ? 'text-emerald-400' : betWon ? 'text-emerald-400' : 'text-white'}`}>
+                  {match.score_away}
+                </span>
+              </div>
+              {/* Pontos ganhos */}
+              {hasBet && (
+                <div className={`flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                  userBet.points_won > 0
+                    ? 'bg-emerald-900/40 text-emerald-400'
+                    : 'bg-gray-800/60 text-gray-500'
+                }`}>
+                  {userBet.points_won > 0 ? '+' : ''}{(userBet.points_won ?? 0).toFixed(1)} pts
+                </div>
+              )}
+            </>
           ) : (
             <>
               <span className="text-xl font-bold text-white">
@@ -100,19 +133,17 @@ function CardContent({ match, isLocked }) {
 
 const GRACE_MS = 20 * 60 * 1000
 
-export default function MatchCard({ match }) {
+export default function MatchCard({ match, userBet }) {
   const isLive     = LIVE_STATUSES.includes(match.status)
   const isFinished = FINISHED_STATUSES.includes(match.status)
 
-  // Se não tem escalação confirmada: 15 min de carência após o kickoff
-  // Se tem escalação: trava no horário do kickoff (normal)
   const gracePeriodEnd = new Date(new Date(match.match_date).getTime() + GRACE_MS)
   const isLocked = isFinished || new Date() >= gracePeriodEnd
 
   if (isLocked) {
     return (
       <div className={`bg-gray-900 border rounded-xl p-4 ${isLive ? 'border-red-500/40' : 'border-gray-800'}`}>
-        <CardContent match={match} isLocked />
+        <CardContent match={match} isLocked userBet={userBet} />
       </div>
     )
   }
@@ -122,7 +153,7 @@ export default function MatchCard({ match }) {
       to={`/jogos/${match.id}/palpite`}
       className="block bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-emerald-500/50 transition-all hover:shadow-lg hover:shadow-emerald-900/20 group"
     >
-      <CardContent match={match} isLocked={false} />
+      <CardContent match={match} isLocked={false} userBet={userBet} />
     </Link>
   )
 }
