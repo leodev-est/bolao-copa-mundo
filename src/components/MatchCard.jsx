@@ -77,22 +77,34 @@ function CardContent({ match, isLocked, userBet }) {
                   <span className="text-sm font-bold text-red-400/80">{userBet.score_away}</span>
                 </div>
               )}
-              {/* Placar real — verde se acertou */}
+              {/* Placar real */}
               <div className="flex items-center gap-2">
-                <span className={`text-2xl font-black ${exactScore ? 'text-emerald-400' : betWon ? 'text-emerald-400' : 'text-white'}`}>
+                <span className={`text-2xl font-black ${
+                  exactScore ? 'text-emerald-400'
+                  : betWon   ? 'text-amber-400'
+                  :             'text-white'
+                }`}>
                   {match.score_home}
                 </span>
-                <span className={`text-lg ${betWon ? 'text-emerald-600' : 'text-gray-500'}`}>×</span>
-                <span className={`text-2xl font-black ${exactScore ? 'text-emerald-400' : betWon ? 'text-emerald-400' : 'text-white'}`}>
+                <span className={`text-lg ${
+                  exactScore ? 'text-emerald-600'
+                  : betWon   ? 'text-amber-600'
+                  :             'text-gray-500'
+                }`}>×</span>
+                <span className={`text-2xl font-black ${
+                  exactScore ? 'text-emerald-400'
+                  : betWon   ? 'text-amber-400'
+                  :             'text-white'
+                }`}>
                   {match.score_away}
                 </span>
               </div>
               {/* Pontos ganhos */}
               {hasBet && (
                 <div className={`flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                  userBet.points_won > 0
-                    ? 'bg-emerald-900/40 text-emerald-400'
-                    : 'bg-gray-800/60 text-gray-500'
+                  exactScore         ? 'bg-emerald-900/40 text-emerald-400'
+                  : userBet.points_won > 0 ? 'bg-amber-900/40 text-amber-400'
+                  :                     'bg-gray-800/60 text-gray-500'
                 }`}>
                   {userBet.points_won > 0 ? '+' : ''}{(userBet.points_won ?? 0).toFixed(1)} pts
                 </div>
