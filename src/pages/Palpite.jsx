@@ -53,8 +53,8 @@ function PlayerList({ players, maxSlots, selected, onChange, disabled }) {
   const visible  = showSubs ? players : starters
 
   const countOf = (player) =>
-    selected.filter(s => s.player_id != null
-      ? s.player_id === player.player_id
+    selected.filter(s => s.player_id != null && player.player_id != null
+      ? Number(s.player_id) === Number(player.player_id)
       : s.player_name === player.player_name
     ).length
 
@@ -298,7 +298,7 @@ export default function Palpite() {
       setScorers((mainBet.bet_scorers ?? []).map(s => ({
         team:        s.team,
         slot_index:  s.slot_index,
-        player_id:   s.player_id,
+        player_id:   s.player_id != null ? Number(s.player_id) : null,
         player_name: s.player_name,
       })))
     }
