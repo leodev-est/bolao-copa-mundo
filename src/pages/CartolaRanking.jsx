@@ -36,7 +36,7 @@ function calcBreakdown(score, position, isCaptain) {
   if (score.assists > 0)
     items.push({ label: `${score.assists} assistência${score.assists > 1 ? 's' : ''}`, pts: score.assists * 5 })
   if (score.clean_sheet && CS_PTS[position])
-    items.push({ label: 'Clean sheet', pts: CS_PTS[position] })
+    items.push({ label: 'Sem gol sofrido', pts: CS_PTS[position] })
   if ((score.penalty_saved ?? 0) > 0)
     items.push({ label: `${score.penalty_saved} pênalti defendido`, pts: score.penalty_saved * 7 })
   if ((score.own_goal ?? 0) > 0)
@@ -49,7 +49,7 @@ function calcBreakdown(score, position, isCaptain) {
   const known = items.reduce((s, i) => s + i.pts, 0)
   const other = parseFloat((score.total_points - known).toFixed(1))
   if (Math.abs(other) >= 0.1)
-    items.push({ label: 'SOG, faltas, impedimentos', pts: other, dim: true })
+    items.push({ label: 'Chutes no gol, faltas e imped.', pts: other, dim: true })
 
   if (isCaptain && score.total_points !== 0)
     items.push({ label: 'Capitão ×2', pts: score.total_points, cap: true })
@@ -62,9 +62,9 @@ function EventTags({ score, position }) {
   const tags = []
   if (score.goals > 0)          tags.push(<span key="g"  className="text-[10px] text-emerald-400 font-semibold">⚽ {score.goals}</span>)
   if (score.assists > 0)        tags.push(<span key="a"  className="text-[10px] text-blue-400 font-semibold">🅰 {score.assists}</span>)
-  if (score.clean_sheet)        tags.push(<span key="cs" className="text-[10px] text-cyan-400 font-semibold">CS</span>)
-  if (score.penalty_saved > 0)  tags.push(<span key="ps" className="text-[10px] text-emerald-300 font-semibold">✋ {score.penalty_saved}</span>)
-  if (score.own_goal > 0)       tags.push(<span key="og" className="text-[10px] text-red-400 font-semibold">OG</span>)
+  if (score.clean_sheet)        tags.push(<span key="cs" className="text-[10px] text-cyan-400 font-semibold">Sem gol sofrido</span>)
+  if (score.penalty_saved > 0)  tags.push(<span key="ps" className="text-[10px] text-emerald-300 font-semibold">✋ {score.penalty_saved} pênalti defend.</span>)
+  if (score.own_goal > 0)       tags.push(<span key="og" className="text-[10px] text-red-400 font-semibold">Gol contra</span>)
   if (score.yellow_card)        tags.push(<span key="y"  className="text-[10px]">🟨</span>)
   if (score.red_card)           tags.push(<span key="r"  className="text-[10px]">🟥</span>)
   if (tags.length === 0) tags.push(<span key="no" className="text-[10px] text-gray-600">sem eventos</span>)
@@ -274,8 +274,8 @@ const SCORING_TABLE = [
   { label: 'Chute no gol (DEF/GOL)',      pts: '+3',    color: 'emerald' },
   { label: 'Chute no gol (MEI/ATA)',      pts: '+2',    color: 'emerald' },
   { label: 'Defesa do goleiro',           pts: '+3',    color: 'emerald' },
-  { label: 'Clean sheet (goleiro)',        pts: '+5',    color: 'emerald' },
-  { label: 'Clean sheet (zagueiro)',       pts: '+5',    color: 'emerald' },
+  { label: 'Sem gol sofrido (goleiro)',     pts: '+5',    color: 'emerald' },
+  { label: 'Sem gol sofrido (zagueiro)',   pts: '+5',    color: 'emerald' },
   { label: 'Falta sofrida',               pts: '+0.5',  color: 'emerald' },
   { label: 'Pênalti defendido',           pts: '+7',    color: 'emerald' },
   { label: 'Falta cometida',              pts: '-0.5',  color: 'red' },

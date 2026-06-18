@@ -74,10 +74,10 @@ function PartialScorePanel({ selectedPlayers, captainSlot, slots, scores = {}, t
                       <>
                         {score.goals > 0        && <span className="text-[10px] text-emerald-400 font-medium">⚽ {score.goals}</span>}
                         {score.assists > 0      && <span className="text-[10px] text-blue-400 font-medium">A {score.assists}</span>}
-                        {score.clean_sheet      && <span className="text-[10px] text-gray-400 font-medium">CS</span>}
+                        {score.clean_sheet      && <span className="text-[10px] text-gray-400 font-medium">Sem gol sofrido</span>}
                         {score.yellow_card      && <span className="text-[10px] text-yellow-400">🟨</span>}
                         {score.red_card         && <span className="text-[10px] text-red-400">🟥</span>}
-                        {(score.own_goal ?? 0) > 0 && <span className="text-[10px] text-red-400">OG {score.own_goal}</span>}
+                        {(score.own_goal ?? 0) > 0 && <span className="text-[10px] text-red-400">Gol contra</span>}
                       </>
                     )
                   ) : (
