@@ -69,12 +69,12 @@ function CardContent({ match, isLocked, userBet }) {
         <div className="flex flex-col items-center gap-1 min-w-[70px] sm:min-w-[80px]">
           {(isFinished || isLive) && match.score_home !== null ? (
             <>
-              {/* Palpite do usuário — sempre visível quando não foi placar exato */}
+              {/* Palpite do usuário — âmbar se acertou resultado, vermelho se errou */}
               {hasBet && !exactScore && (
                 <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="text-sm font-bold text-amber-400/80">{userBet.score_home}</span>
-                  <span className="text-amber-400/40 text-xs">×</span>
-                  <span className="text-sm font-bold text-amber-400/80">{userBet.score_away}</span>
+                  <span className={`text-sm font-bold ${betLost ? 'text-red-400/80' : 'text-amber-400/80'}`}>{userBet.score_home}</span>
+                  <span className={`text-xs ${betLost ? 'text-red-400/40' : 'text-amber-400/40'}`}>×</span>
+                  <span className={`text-sm font-bold ${betLost ? 'text-red-400/80' : 'text-amber-400/80'}`}>{userBet.score_away}</span>
                 </div>
               )}
               {/* Placar real */}
