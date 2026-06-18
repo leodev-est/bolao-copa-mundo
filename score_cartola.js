@@ -115,13 +115,15 @@ async function fetchEspnEvents(espnId) {
     const data = await res.json()
     const keyEvents = data.keyEvents ?? []
 
-    const goals   = []
-    const assists = []
-    const yellows = []
-    const reds    = []
+    const goals     = []
+    const assists   = []
+    const yellows   = []
+    const reds      = []
+    const penMissed = []
 
     for (const ev of keyEvents) {
-      const text = (ev.text ?? '').trim()
+      const text     = (ev.text ?? '').trim()
+      const evType   = ev.type?.type ?? ''
       if (!text) continue
 
       if (text.startsWith('Goal!')) {
@@ -131,12 +133,15 @@ async function fetchEspnEvents(espnId) {
           const isOwn    = text.toLowerCase().includes('own goal')
           const goalTeam = scorerMatch[2].trim()
           goals.push({ name: scorerMatch[1].trim(), team: goalTeam, isOwn })
-          // Assistência vem do mesmo time que o gol
           const assistMatch = text.match(/[Aa]ssisted by ([^.,(]+)/i)
           if (assistMatch) assists.push({ name: assistMatch[1].trim(), team: goalTeam })
         }
+      } else if (evType.includes('penalty') && (evType.includes('miss') || evType.includes('saved'))) {
+        // Pênalti perdido: "penalty---missed" ou "penalty---saved" (para quem cobrou)
+        const p = ev.participants?.[0]?.athlete
+        const t = ev.team?.displayName ?? ''
+        if (p) penMissed.push({ name: p.displayName, team: t })
       } else if (text.toLowerCase().includes('yellow card')) {
-        // "Rani Khedira (Tunisia) is shown the yellow card..."
         const m = text.match(/^([^(]+)\s+\(([^)]+)\)/)
         if (m) yellows.push({ name: m[1].trim(), team: m[2].trim() })
       } else if (text.toLowerCase().includes('red card') || text.toLowerCase().includes('sent off')) {
@@ -154,18 +159,21 @@ async function fetchEspnEvents(espnId) {
         const statMap = {}
         for (const s of (p.stats ?? [])) statMap[s.name] = s.value ?? 0
         playerStats.push({
-          name:          p.athlete.displayName,
-          team:          teamName,
-          shotsOnTarget: statMap.shotsOnTarget ?? 0,
-          saves:         statMap.saves         ?? null,   // explícito em alguns GKs
-          shotsFaced:    statMap.shotsFaced     ?? 0,
-          goalsConceded: statMap.goalsConceded  ?? 0,
+          name:           p.athlete.displayName,
+          team:           teamName,
+          shotsOnTarget:  statMap.shotsOnTarget  ?? 0,
+          saves:          statMap.saves          ?? null,
+          shotsFaced:     statMap.shotsFaced      ?? 0,
+          goalsConceded:  statMap.goalsConceded   ?? 0,
+          foulsCommitted: statMap.foulsCommitted  ?? 0,
+          foulsSuffered:  statMap.foulsSuffered   ?? 0,
+          offsides:       statMap.offsides        ?? 0,
         })
       }
     }
 
-    console.log(`    ↳ ESPN keyEvents: ${goals.length}G ${assists.length}A ${yellows.length}Y ${reds.length}R | ${playerStats.length} stats`)
-    return { goals, assists, yellows, reds, playerStats }
+    console.log(`    ↳ ESPN keyEvents: ${goals.length}G ${assists.length}A ${yellows.length}Y ${reds.length}R ${penMissed.length}PM | ${playerStats.length} stats`)
+    return { goals, assists, yellows, reds, penMissed, playerStats }
   } catch (err) {
     console.warn(`    ↳ ESPN keyEvents falhou: ${err.message}`)
     return null
@@ -174,30 +182,41 @@ async function fetchEspnEvents(espnId) {
 
 // ── Pontuação ───────────────────────────────────────────────────────────────────
 const SCORING = {
-  goal:         { GK: 15, DEF: 12, MID: 8, FWD: 8 },
-  assist:       5,
-  cleanSheet:   { GK: 5, DEF: 3 },
-  yellowCard:  -2,
-  redCard:     -5,
-  penaltySaved: 7,
-  ownGoal:     -4,
-  shotOnTarget: { GK: 3, DEF: 3, MID: 2, FWD: 2 },
-  save:         2,
+  goal:          { GK: 15, DEF: 12, MID: 8, FWD: 8 },
+  assist:        5,
+  cleanSheet:    { GK: 5, DEF: 5 },
+  yellowCard:   -2,
+  redCard:      -5,
+  penaltySaved:  7,
+  penaltyMissed:-3,
+  ownGoal:      -4,
+  shotOnTarget:  { GK: 3, DEF: 3, MID: 2, FWD: 2 },
+  save:          2,
+  foulCommitted:-0.5,
+  foulSuffered:  0.5,
+  offside:      -0.5,
 }
 
 function calcScore({ position, goals = 0, assists = 0, cleanSheet = false,
-  yellowCard = false, redCard = false, penaltySaved = 0, ownGoal = 0,
-  shotsOnTarget = 0, saves = 0 }) {
+  yellowCard = false, redCard = false, penaltySaved = 0, penaltyMissed = 0,
+  ownGoal = 0, shotsOnTarget = 0, saves = 0,
+  foulsCommitted = 0, foulsSuffered = 0, offsides = 0, conceded = 0 }) {
   let pts = 0
   pts += goals * (SCORING.goal[position] ?? 8)
   pts += assists * SCORING.assist
   if (cleanSheet && (position === 'GK' || position === 'DEF')) pts += SCORING.cleanSheet[position] ?? 0
   if (yellowCard) pts += SCORING.yellowCard
   if (redCard)    pts += SCORING.redCard
-  pts += penaltySaved * SCORING.penaltySaved
-  pts += ownGoal * SCORING.ownGoal
+  pts += penaltySaved  * SCORING.penaltySaved
+  pts += penaltyMissed * SCORING.penaltyMissed
+  pts += ownGoal       * SCORING.ownGoal
   pts += shotsOnTarget * (SCORING.shotOnTarget[position] ?? 1)
   if (position === 'GK') pts += saves * SCORING.save
+  pts += foulsCommitted * SCORING.foulCommitted
+  pts += foulsSuffered  * SCORING.foulSuffered
+  pts += offsides       * SCORING.offside
+  // DEF: penalidade progressiva por gols sofridos (2 gols → -1, 3 → -2, 4+ → -3)
+  if (position === 'DEF' && conceded >= 2) pts += Math.max(-3, -(conceded - 1))
   return pts
 }
 
@@ -320,23 +339,27 @@ async function processMatch(match, roundId) {
 
     const byName = (g) => namesMatch(g.name, player.name) && teamsMatch(g.team, player.team_name)
     let playerGoals = 0, playerAssists = 0, playerYellow = false, playerRed = false
-    let playerPenSaved = 0, playerOwnGoal = 0
+    let playerPenSaved = 0, playerOwnGoal = 0, playerPenMissed = 0
     if (espnEvents) {
-      playerGoals    = espnEvents.goals.filter(g => !g.isOwn && byName(g)).length
-      playerAssists  = espnEvents.assists.filter(g => byName(g)).length
-      playerYellow   = espnEvents.yellows.some(g => byName(g))
-      playerRed      = espnEvents.reds.some(g => byName(g))
-      playerOwnGoal  = espnEvents.goals.filter(g => g.isOwn && byName(g)).length
+      playerGoals     = espnEvents.goals.filter(g => !g.isOwn && byName(g)).length
+      playerAssists   = espnEvents.assists.filter(g => byName(g)).length
+      playerYellow    = espnEvents.yellows.some(g => byName(g))
+      playerRed       = espnEvents.reds.some(g => byName(g))
+      playerOwnGoal   = espnEvents.goals.filter(g => g.isOwn && byName(g)).length
+      playerPenMissed = (espnEvents.penMissed ?? []).filter(g => byName(g)).length
     }
 
-    // Stats extras da ESPN: chutes no gol e defesas do goleiro
+    // Stats individuais da ESPN
     let playerSOG = 0, playerSaves = 0
+    let playerFoulsComm = 0, playerFoulsSuff = 0, playerOffsides = 0
     if (espnEvents?.playerStats) {
       const pStat = espnEvents.playerStats.find(s => byName(s))
       if (pStat) {
-        playerSOG = pStat.shotsOnTarget ?? 0
+        playerSOG       = pStat.shotsOnTarget  ?? 0
+        playerFoulsComm = pStat.foulsCommitted ?? 0
+        playerFoulsSuff = pStat.foulsSuffered  ?? 0
+        playerOffsides  = pStat.offsides       ?? 0
         if (player.position === 'GK') {
-          // ESPN às vezes expõe 'saves' diretamente; se não, calcula shotsFaced - goalsConceded
           playerSaves = pStat.saves !== null
             ? pStat.saves
             : Math.max(0, (pStat.shotsFaced ?? 0) - (pStat.goalsConceded ?? 0))
@@ -349,8 +372,10 @@ async function processMatch(match, roundId) {
     const total = calcScore({
       position: player.position, goals: playerGoals, assists: playerAssists,
       cleanSheet: playerCS, yellowCard: playerYellow, redCard: playerRed,
-      penaltySaved: playerPenSaved, ownGoal: playerOwnGoal,
-      shotsOnTarget: playerSOG, saves: playerSaves,
+      penaltySaved: playerPenSaved, penaltyMissed: playerPenMissed,
+      ownGoal: playerOwnGoal, shotsOnTarget: playerSOG, saves: playerSaves,
+      foulsCommitted: playerFoulsComm, foulsSuffered: playerFoulsSuff,
+      offsides: playerOffsides, conceded,
     })
 
     return {
