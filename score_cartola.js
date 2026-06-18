@@ -191,7 +191,7 @@ const SCORING = {
   penaltyMissed:-3,
   ownGoal:      -4,
   shotOnTarget:  { GK: 3, DEF: 3, MID: 2, FWD: 2 },
-  save:          2,
+  save:          3,
   foulCommitted:-0.5,
   foulSuffered:  0.5,
   offside:      -0.5,
