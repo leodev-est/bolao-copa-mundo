@@ -451,7 +451,7 @@ async function updatePlayerPrices() {
       else if (totalPts === 0) adjustment = -2.0
       else if (totalPts < 5)  adjustment = -1.0
       else if (totalPts < 10) adjustment =  1.0
-      else                     adjustment = clamp((totalPts - 9) * 0.25, 1.5, 9)
+      else                     adjustment = clamp((totalPts - 9) * 0.25, 1.5, 12)
     }
     const newPrice  = roundHalf(Math.max(2, base + adjustment))
     const newAvg    = roundHalf(avgPts)

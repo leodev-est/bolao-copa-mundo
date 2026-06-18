@@ -43,9 +43,9 @@ export function buildFieldRows(formation) {
 export const BUDGET = 100
 
 // Configuração do sistema de orçamento dinâmico entre rodadas
-const BUDGET_FACTOR = 0.5   // 1 pt = C$0,50 de ajuste
-const BUDGET_MIN    = 80    // orçamento mínimo (pior caso)
-const BUDGET_MAX    = 120   // orçamento máximo (melhor caso)
+const BUDGET_FACTOR = 0.3   // 1 pt = C$0,30 de ajuste
+const BUDGET_MIN    = 85    // orçamento mínimo (pior caso)
+const BUDGET_MAX    = 135   // orçamento máximo (melhor caso)
 
 // ── Rodada atual ────────────────────────────────────────────
 async function fetchCurrentRound() {
