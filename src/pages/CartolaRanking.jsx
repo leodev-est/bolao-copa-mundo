@@ -74,6 +74,8 @@ function EventTags({ score, position }) {
 function MyTeamView({ userId, roundId, onSwitchToRanking }) {
   const { data: team, isLoading: teamLoading } = useRoundTeam(userId, roundId)
   const { data: scoresMap = {}, isLoading: scoresLoading } = useRoundPlayerScores(roundId)
+  const [expanded, setExpanded] = useState(null)
+  const toggle = (id) => setExpanded(prev => prev === id ? null : id)
 
   if (teamLoading || scoresLoading) {
     return (
@@ -112,9 +114,6 @@ function MyTeamView({ userId, roundId, onSwitchToRanking }) {
     const base  = score?.total_points ?? 0
     totalCalc  += tp.is_captain ? base * 2 : base
   }
-
-  const [expanded, setExpanded] = useState(null)
-  const toggle = (id) => setExpanded(prev => prev === id ? null : id)
 
   return (
     <div>
