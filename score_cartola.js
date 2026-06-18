@@ -47,11 +47,24 @@ function namesMatch(espnName, dbName) {
   const dn = norm(dbName)
   // Nome completo ou substring (ex: "Gyökeres" bate "Viktor Gyökeres")
   if (en === dn || en.includes(dn) || dn.includes(en)) return true
-  // Sobrenome: último token de cada nome deve ser igual e ter >=4 chars
-  // Evita falsos positivos por primeiro nome comum (Viktor X vs Viktor Y, Alexander X vs Alexander Y)
-  const enLast = en.split(' ').filter(Boolean).at(-1) ?? ''
-  const dnLast = dn.split(' ').filter(Boolean).at(-1) ?? ''
-  return enLast.length >= 4 && enLast === dnLast
+  // Sobrenome: último token deve ser igual e ter >=4 chars
+  const enTokens = en.split(' ').filter(Boolean)
+  const dnTokens = dn.split(' ').filter(Boolean)
+  const enLast = enTokens.at(-1) ?? ''
+  const dnLast = dnTokens.at(-1) ?? ''
+  if (enLast.length < 4 || enLast !== dnLast) return false
+  // Se ambos têm primeiro nome e são diferentes → não é o mesmo jogador
+  // (ex: "Maxi Araújo" ≠ "Ronald Araújo" — mesmo sobrenome, primeiro diferente)
+  // Se ambos têm primeiro nome, verificam compatibilidade:
+  // nomes iguais OU um é prefixo do outro com >=3 chars (ex: "Maxi" ↔ "Maximiliano")
+  if (enTokens.length > 1 && dnTokens.length > 1) {
+    const ef = enTokens[0], df = dnTokens[0]
+    const compatible = ef === df
+      || (ef.length >= 3 && df.startsWith(ef))
+      || (df.length >= 3 && ef.startsWith(df))
+    if (!compatible) return false
+  }
+  return true
 }
 
 function teamsMatch(espnTeam, dbTeam) {
