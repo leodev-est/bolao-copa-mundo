@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { RefreshCw, Trophy } from 'lucide-react'
+import { Trophy, ChevronDown, ChevronUp } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import {
   useCartolaRounds,
@@ -22,6 +22,39 @@ function Medal({ pos }) {
   if (pos === 2) return <span className="text-lg">🥈</span>
   if (pos === 3) return <span className="text-lg">🥉</span>
   return <span className="text-xs font-bold text-gray-500">#{pos}</span>
+}
+
+const GOAL_PTS = { GK: 15, DEF: 12, MID: 8, FWD: 8 }
+const CS_PTS   = { GK: 5,  DEF: 5 }
+const SOT_PTS  = { GK: 3,  DEF: 3, MID: 2, FWD: 2 }
+
+function calcBreakdown(score, position, isCaptain) {
+  if (!score) return []
+  const items = []
+  if (score.goals > 0)
+    items.push({ label: `${score.goals} gol${score.goals > 1 ? 's' : ''}`, pts: score.goals * (GOAL_PTS[position] ?? 8) })
+  if (score.assists > 0)
+    items.push({ label: `${score.assists} assistência${score.assists > 1 ? 's' : ''}`, pts: score.assists * 5 })
+  if (score.clean_sheet && CS_PTS[position])
+    items.push({ label: 'Clean sheet', pts: CS_PTS[position] })
+  if ((score.penalty_saved ?? 0) > 0)
+    items.push({ label: `${score.penalty_saved} pênalti defendido`, pts: score.penalty_saved * 7 })
+  if ((score.own_goal ?? 0) > 0)
+    items.push({ label: `${score.own_goal} gol contra`, pts: score.own_goal * -4 })
+  if (score.yellow_card)
+    items.push({ label: 'Cartão amarelo', pts: -2 })
+  if (score.red_card)
+    items.push({ label: 'Cartão vermelho', pts: -5 })
+
+  const known = items.reduce((s, i) => s + i.pts, 0)
+  const other = parseFloat((score.total_points - known).toFixed(1))
+  if (Math.abs(other) >= 0.1)
+    items.push({ label: 'SOG, faltas, impedimentos', pts: other, dim: true })
+
+  if (isCaptain && score.total_points !== 0)
+    items.push({ label: 'Capitão ×2', pts: score.total_points, cap: true })
+
+  return items
 }
 
 function EventTags({ score, position }) {
@@ -80,6 +113,9 @@ function MyTeamView({ userId, roundId, onSwitchToRanking }) {
     totalCalc  += tp.is_captain ? base * 2 : base
   }
 
+  const [expanded, setExpanded] = useState(null)
+  const toggle = (id) => setExpanded(prev => prev === id ? null : id)
+
   return (
     <div>
       {/* Cabeçalho do time */}
@@ -99,56 +135,88 @@ function MyTeamView({ userId, roundId, onSwitchToRanking }) {
           {players.map(tp => {
             const p = tp.cartola_players
             if (!p) return null
-            const score    = scoresMap[p.id] ?? null
-            const base     = score?.total_points ?? null
-            const pts      = base !== null ? (tp.is_captain ? base * 2 : base) : null
-            const posStyle = POS_STYLE[p.position] ?? 'text-gray-400 bg-gray-800'
+            const score     = scoresMap[p.id] ?? null
+            const base      = score?.total_points ?? null
+            const pts       = base !== null ? (tp.is_captain ? base * 2 : base) : null
+            const posStyle  = POS_STYLE[p.position] ?? 'text-gray-400 bg-gray-800'
+            const isOpen    = expanded === tp.id
+            const breakdown = calcBreakdown(score, p.position, tp.is_captain)
 
             return (
-              <div key={tp.id} className="px-4 py-3 flex items-center gap-3">
-                {/* Posição */}
-                <span className={`text-[10px] font-bold w-7 h-7 flex items-center justify-center rounded-lg shrink-0 ${posStyle}`}>
-                  {p.position}
-                </span>
+              <div key={tp.id}>
+                {/* Row clicável */}
+                <button
+                  onClick={() => breakdown.length > 0 && toggle(tp.id)}
+                  className={`w-full px-4 py-3 flex items-center gap-3 text-left transition-colors ${breakdown.length > 0 ? 'hover:bg-gray-800/40 cursor-pointer' : 'cursor-default'}`}
+                >
+                  <span className={`text-[10px] font-bold w-7 h-7 flex items-center justify-center rounded-lg shrink-0 ${posStyle}`}>
+                    {p.position}
+                  </span>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <p className="text-white text-sm font-medium leading-tight">{p.name}</p>
-                    {tp.is_captain && (
-                      <span className="w-4 h-4 rounded-full bg-orange-500 flex items-center justify-center shrink-0">
-                        <span className="text-white text-[9px] font-black">C</span>
-                      </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-white text-sm font-medium leading-tight">{p.name}</p>
+                      {tp.is_captain && (
+                        <span className="w-4 h-4 rounded-full bg-orange-500 flex items-center justify-center shrink-0">
+                          <span className="text-white text-[9px] font-black">C</span>
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-gray-500 text-[11px] mt-0.5">{p.team_name}</p>
+                    <div className="mt-1">
+                      <EventTags score={score} position={p.position} />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="text-right min-w-[44px]">
+                      {pts !== null ? (
+                        <>
+                          <p className={`text-sm font-bold leading-tight ${pts > 0 ? 'text-emerald-400' : pts < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                            {pts > 0 ? '+' : ''}{pts.toFixed(1)}
+                          </p>
+                          {tp.is_captain && <p className="text-[9px] text-orange-400">×2</p>}
+                        </>
+                      ) : (
+                        <span className="text-xs text-gray-600">—</span>
+                      )}
+                    </div>
+                    {breakdown.length > 0 && (
+                      isOpen
+                        ? <ChevronUp className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                        : <ChevronDown className="w-3.5 h-3.5 text-gray-500 shrink-0" />
                     )}
                   </div>
-                  <p className="text-gray-500 text-[11px] mt-0.5">{p.team_name}</p>
-                  <div className="mt-1">
-                    <EventTags score={score} position={p.position} />
-                  </div>
-                </div>
+                </button>
 
-                {/* Pontos */}
-                <div className="text-right shrink-0 min-w-[52px]">
-                  {pts !== null ? (
-                    <>
-                      <p className={`text-sm font-bold leading-tight ${pts > 0 ? 'text-emerald-400' : pts < 0 ? 'text-red-400' : 'text-gray-500'}`}>
-                        {pts > 0 ? '+' : ''}{pts.toFixed(1)}
-                      </p>
-                      {tp.is_captain && <p className="text-[9px] text-orange-400">×2</p>}
-                    </>
-                  ) : (
-                    <span className="text-xs text-gray-600">—</span>
-                  )}
-                </div>
+                {/* Breakdown expandido */}
+                {isOpen && (
+                  <div className="px-4 pb-3 bg-gray-800/30">
+                    <div className="rounded-xl border border-gray-700/50 overflow-hidden">
+                      {breakdown.map((item, i) => (
+                        <div key={i} className={`flex justify-between items-center px-3 py-2 text-xs ${item.cap ? 'border-t border-gray-700/50 bg-orange-900/10' : i > 0 ? 'border-t border-gray-700/30' : ''}`}>
+                          <span className={item.cap ? 'text-orange-400 font-medium' : item.dim ? 'text-gray-500' : 'text-gray-300'}>
+                            {item.label}
+                          </span>
+                          <span className={`font-bold ${item.cap ? 'text-orange-400' : item.pts > 0 ? 'text-emerald-400' : item.pts < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                            {item.pts > 0 ? '+' : ''}{item.pts.toFixed(1)}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between items-center px-3 py-2 border-t border-gray-700/50 bg-gray-800/60">
+                        <span className="text-white text-xs font-semibold">Total</span>
+                        <span className={`font-black text-sm ${(pts ?? 0) > 0 ? 'text-emerald-400' : (pts ?? 0) < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                          {(pts ?? 0) > 0 ? '+' : ''}{(pts ?? 0).toFixed(1)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })}
         </div>
       </div>
-
-      <p className="text-center text-xs text-gray-600 mb-4">
-        SOG, faltas e impedimentos estão incluídos na pontuação total
-      </p>
 
       {/* Link para ranking */}
       <button
