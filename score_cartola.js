@@ -394,8 +394,14 @@ async function recalcTeamTotals(roundId) {
 }
 
 // ── Ajuste dinâmico de preços pós-rodada ────────────────────────────────────────
-// Cada ponto conquistado na Copa = +0.15 no preço (acumulado)
-// Bônus máximo: +5  |  Penalidade máxima: -3  |  Mínimo absoluto: C$2
+// Regras (sobre o preço-base do tier):
+//   Não jogou ainda  →  sem alteração
+//   pts < 0          →  -3.0  (perde mais)
+//   pts = 0          →  -2.0  (sem contribuição)
+//   1 ≤ pts < 5      →  -1.0  (abaixo do esperado)
+//   5 ≤ pts < 10     →  +1.0  (contribuição razoável)
+//   pts ≥ 10         →  +clamp((pts-9)*0.25, 1.5, 9)  (bom → ótimo)
+//   Mínimo absoluto: C$2
 
 const TEAM_TIERS_PRICE = {
   elite: new Set(['Argentina','Brazil','England','France','Germany','Netherlands','Portugal','Spain']),
@@ -439,7 +445,14 @@ async function updatePlayerPrices() {
     const matches   = matchesByPlayer[p.id] ?? 0
     const avgPts    = matches > 0 ? totalPts / matches : 0
     const base      = basePriceOf(p.team_name, p.position)
-    const adjustment = clamp(totalPts * 0.15, -3, 5)
+    let adjustment = 0
+    if (matches > 0) {
+      if      (totalPts < 0)  adjustment = -3.0
+      else if (totalPts === 0) adjustment = -2.0
+      else if (totalPts < 5)  adjustment = -1.0
+      else if (totalPts < 10) adjustment =  1.0
+      else                     adjustment = clamp((totalPts - 9) * 0.25, 1.5, 9)
+    }
     const newPrice  = roundHalf(Math.max(2, base + adjustment))
     const newAvg    = roundHalf(avgPts)
 
