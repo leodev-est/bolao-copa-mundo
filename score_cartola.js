@@ -547,7 +547,7 @@ async function computeMinTeamCost() {
 
 // ── Verifica se a rodada encerrou ───────────────────────────────────────────────
 async function checkRoundCompletion(round) {
-  const endFilter = new Date(new Date(round.end_date).getTime() + 30 * 60 * 60 * 1000).toISOString()
+  const endFilter = new Date(new Date(round.end_date).getTime() + 4 * 60 * 60 * 1000).toISOString()
 
   const { data: unfinished, error } = await supabase
     .from('matches')
@@ -593,7 +593,7 @@ async function main() {
 
     // end_date is a BRT calendar date; Copa games at 21:00 ET = 01:00 UTC next day,
     // so add 30h buffer: end_date + 1 day at 06:00 UTC covers all BRT-day games.
-    const endFilter = new Date(new Date(round.end_date).getTime() + 30 * 60 * 60 * 1000).toISOString()
+    const endFilter = new Date(new Date(round.end_date).getTime() + 4 * 60 * 60 * 1000).toISOString()
 
     const { data: matches } = await supabase
       .from('matches')
