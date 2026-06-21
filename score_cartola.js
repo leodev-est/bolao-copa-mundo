@@ -134,7 +134,11 @@ async function fetchEspnEvents(espnId) {
           const goalTeam = scorerMatch[2].trim()
           goals.push({ name: scorerMatch[1].trim(), team: goalTeam, isOwn })
           const assistMatch = text.match(/[Aa]ssisted by ([^.,(]+)/i)
-          if (assistMatch) assists.push({ name: assistMatch[1].trim(), team: goalTeam })
+          if (assistMatch) {
+            // Remove "with a cross/through ball/etc." trailing phrase
+            const assistName = assistMatch[1].replace(/\s+with\s+.*/i, '').trim()
+            assists.push({ name: assistName, team: goalTeam })
+          }
         }
       } else if (evType.includes('penalty') && (evType.includes('miss') || evType.includes('saved'))) {
         // Pênalti perdido: "penalty---missed" ou "penalty---saved" (para quem cobrou)
