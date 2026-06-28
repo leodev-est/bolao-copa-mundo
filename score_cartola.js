@@ -483,9 +483,15 @@ async function updatePlayerPrices() {
     matchesByPlayer[s.player_id] = (matchesByPlayer[s.player_id] ?? 0) + 1
   }
 
-  const { data: players } = await supabase
-    .from('cartola_players')
-    .select('id, team_name, position, price')
+  // Paginação nos players também (pode passar de 1000)
+  const allPlayers = []
+  for (let pg = 0; ; pg++) {
+    const { data } = await supabase.from('cartola_players').select('id, team_name, position, price, avg_points').range(pg*1000, (pg+1)*1000-1)
+    if (!data?.length) break
+    allPlayers.push(...data)
+    if (data.length < 1000) break
+  }
+  const players = allPlayers
 
   let changed = 0
   for (const p of players ?? []) {
