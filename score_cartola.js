@@ -417,6 +417,7 @@ async function recalcTeamTotals(roundId) {
     .from('cartola_player_scores')
     .select('player_id, total_points')
     .eq('round_id', roundId)
+    .limit(5000)
 
   const scoreMap = {}
   ;(scores ?? []).forEach(s => { scoreMap[s.player_id] = (scoreMap[s.player_id] ?? 0) + s.total_points })
@@ -465,10 +466,15 @@ function roundHalf(v)      { return Math.round(v * 2) / 2 }
 async function updatePlayerPrices() {
   console.log('\n💰 Ajustando preços por performance na Copa...')
 
-  // Pontuação total acumulada de cada jogador em todas as rodadas
-  const { data: scores } = await supabase
-    .from('cartola_player_scores')
-    .select('player_id, total_points')
+  // Pontuação total acumulada — usa paginação (Supabase cap de 1000 rows por request)
+  const allScores = []
+  for (let page = 0; ; page++) {
+    const { data } = await supabase.from('cartola_player_scores').select('player_id, total_points').range(page * 1000, (page + 1) * 1000 - 1)
+    if (!data?.length) break
+    allScores.push(...data)
+    if (data.length < 1000) break
+  }
+  const scores = allScores
 
   const ptsByPlayer = {}
   const matchesByPlayer = {}
